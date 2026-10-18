@@ -1,0 +1,4 @@
+Bldg-Unit,Unit Type,SQFT,Unit Status,Market Rent,Charge Code,Scheduled Charges,Balance,Deposit Held,Move-In,Lease Start,Lease End
+1-101,1x1 D,689,Occupied No Notice,1600,Rent Charge,1500,0,500,9/28/2020,9/28/2020,11/1/2021
+1-102,1x1 D,689,Occupied No Notice,1650,1st Floor,1550,0,500,4/12/2021,4/12/2021,5/31/2022
+1-116,2x2.5 K,1009,Vacant Unrented Not Ready,1800,-,0,0,0,,,

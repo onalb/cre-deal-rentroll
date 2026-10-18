@@ -1,0 +1,35 @@
+---
+description: After any change that affects the running app, immediately restart the full Docker stack. Never ask. Never skip.
+alwaysApply: true
+---
+
+# Restart stack after ANY app-affecting change
+
+This is mandatory. After **any** change that can affect the running app, **immediately** restart the full stack from the repo root. Do not wait. Do not ask. Do not skip.
+
+**Triggers (non-exhaustive — if in doubt, restart):**
+- `api/` (code, config, Dockerfiles)
+- `ui/` (code, config, Dockerfiles)
+- Docker (`docker-compose.yml`, Dockerfiles, compose env)
+- Skills or other files stuffed into the agent prompt that change how the app is built, run, or instructed at runtime
+
+**Do not:**
+- Wait for the user to ask
+- Ask whether to restart
+- Warn, confirm, or ask about Dynamo wipe (in-memory Dynamo wipe on restart is expected)
+- Use `&&` on PowerShell — chain with `;` instead
+
+Required sequence (from repo root). Keep this exact pair of commands:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+PowerShell example (same commands, chained with `;`):
+
+```powershell
+docker compose down; docker compose up -d --build
+```
+
+This rebuilds and brings up **all** services: UI, API, Dynamo, and dynamodb-admin.

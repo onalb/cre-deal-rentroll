@@ -1,0 +1,6 @@
+Unit,Unit Type,Resident,Charge Code,Amount
+101,1x1,Jane Doe,Charge Total:,1500
+101,1x1,Jane Doe,RENT,1400
+101,1x1,Jane Doe,RUBS,100
+102,1x1,John Smith,Charge Total:,0
+102,1x1,John Smith,RENT,0

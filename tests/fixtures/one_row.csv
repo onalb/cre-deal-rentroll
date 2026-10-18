@@ -1,0 +1,4 @@
+Unit,UnitType,Sqft,OccStatus,InPlaceRent,Tenant,Address
+201,2BR,900,Occupied,1800,Secret Person,123 Main St Springfield IL
+202,2BR,900,Vacant,1800,,123 Main St Springfield IL
+203,1BR,650,Occupied,1200,Other Name,123 Main St Springfield IL

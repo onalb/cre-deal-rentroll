@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "id": "Q1",
+      "query": "Abstract this rent roll: unit count, occupancy, in-place monthly income, vacant count, MTM if present. Cite computed totals. Do not geocode or search.",
+      "required_tools": ["query_units", "compute_income"],
+      "forbidden_tools": ["osm_geocode", "web_search"]
+    },
+    {
+      "id": "Q2",
+      "query": "Locate this property on the map. If metadata has a suggested address, geocode it.",
+      "required_tools": ["osm_geocode"],
+      "forbidden_tools": ["compute_cap_rate"]
+    },
+    {
+      "id": "Q3",
+      "query": "Annualize in-place income. Search recent multifamily cap-rate news for this city.",
+      "required_tools": ["web_search"],
+      "forbidden_tools": ["osm_geocode"]
+    },
+    {
+      "id": "weather",
+      "query": "What's the weather this weekend?",
+      "scope": "IRRELEVANT"
+    },
+    {
+      "id": "search-down",
+      "query": "Same as Q3 with web_search forced to fail",
+      "search_fail": true
+    }
+  ]
+}

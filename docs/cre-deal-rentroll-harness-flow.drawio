@@ -1,0 +1,247 @@
+<mxfile host="app.diagrams.net" agent="CRE Deal Rentroll">
+  <diagram id="harness-ingest-flow" name="Ingest and harness flow">
+    <mxGraphModel dx="2573" dy="2601" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1760" pageHeight="2100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=16;fontStyle=1;fontColor=#1B365D;fontFamily=Helvetica;" value="CRE Deal Rentroll — ingest and harness flow" vertex="1">
+          <mxGeometry height="28" width="720" x="40" y="16" as="geometry" />
+        </mxCell>
+        <mxCell id="user" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1B365D;strokeColor=#1B365D;fontColor=#FFFFFF;fontStyle=1;fontSize=13;" value="User" vertex="1">
+          <mxGeometry height="44" width="140" x="700" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="_fvkCcMeCT8ggtGoCRqr-3" edge="1" parent="1" source="harness" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="scope" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="harness" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=12;fontStyle=1;" value="Harness" vertex="1">
+          <mxGeometry height="40" width="200" x="80" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="_fvkCcMeCT8ggtGoCRqr-4" edge="1" parent="1" source="scope" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="inventory" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="scope" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=12;" value="Scope" vertex="1">
+          <mxGeometry height="40" width="200" x="80" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="oos" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1B365D;strokeColor=#1B365D;fontColor=#FFFFFF;fontSize=10;" value="User: out of scope&#xa;Cannot help with that" vertex="1">
+          <mxGeometry height="52" width="190" x="360" y="178" as="geometry" />
+        </mxCell>
+        <mxCell id="oos_stop" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#FCE7F3;strokeColor=#BE185D;fontColor=#9F1239;fontSize=10;" value="Stop — turn ends.&#xa;No tools, no eval.&#xa;User already has a message" vertex="1">
+          <mxGeometry height="56" width="210" x="580" y="176" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Inventory&#xa;RollAbstractor / Locator / Underwriter" vertex="1">
+          <mxGeometry height="52" width="220" x="70" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="multi" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=11;fontStyle=1;" value="Multi&#xa;intent?" vertex="1">
+          <mxGeometry height="90" width="160" x="100" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="skip" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Skip decompose" vertex="1">
+          <mxGeometry height="36" width="140" x="40" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="decomp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Decompose" vertex="1">
+          <mxGeometry height="36" width="140" x="230" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="reflect_plan" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Reflect on plan" vertex="1">
+          <mxGeometry height="36" width="140" x="230" y="516" as="geometry" />
+        </mxCell>
+        <mxCell id="fact" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;fontStyle=1;" value="Retrieve Dynamo&#xa;FACT inject" vertex="1">
+          <mxGeometry height="48" width="200" x="80" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="react" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=12;fontStyle=1;" value="Strands ReAct&#xa;max_steps" vertex="1">
+          <mxGeometry height="48" width="200" x="80" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="compact" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Token measure compact" vertex="1">
+          <mxGeometry height="40" width="200" x="80" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="reflect_two" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Reflect if one of two" vertex="1">
+          <mxGeometry height="40" width="200" x="80" y="810" as="geometry" />
+        </mxCell>
+        <mxCell id="structured" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Structured output" vertex="1">
+          <mxGeometry height="40" width="200" x="80" y="880" as="geometry" />
+        </mxCell>
+        <mxCell id="evalsvc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#DB2777;fontColor=#9F1239;fontSize=11;" value="Harness eval_service&#xa;(not a second loop)" vertex="1">
+          <mxGeometry height="50" width="200" x="80" y="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ingest" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=12;fontStyle=1;" value="tool: ingest" vertex="1">
+          <mxGeometry height="40" width="180" x="1480" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="detect" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Detect layout" vertex="1">
+          <mxGeometry height="36" width="180" x="1480" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="parse" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Parse RealPage or one row" vertex="1">
+          <mxGeometry height="44" width="180" x="1480" y="246" as="geometry" />
+        </mxCell>
+        <mxCell id="pii" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Drop tenant names / PII" vertex="1">
+          <mxGeometry height="40" width="180" x="1480" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="vault" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;" value="Session vault unit grid" vertex="1">
+          <mxGeometry height="44" width="180" x="1480" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="ack" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;" value="Ack units, as-of,&#xa;geo confidence" vertex="1">
+          <mxGeometry height="48" width="180" x="1480" y="434" as="geometry" />
+        </mxCell>
+        <mxCell id="skills_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F3FF;strokeColor=#7C3AED;verticalAlign=top;align=center;fontColor=#5B21B6;fontStyle=1;fontSize=11;" value="skills — not extra" vertex="1">
+          <mxGeometry height="150" width="190" x="360" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="skill1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontColor=#5B21B6;fontSize=10;" value="skill: rent-roll SKILL.md" vertex="1">
+          <mxGeometry height="40" width="160" x="375" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="skill2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontColor=#5B21B6;fontSize=10;" value="skill: underwriting SKILL.md" vertex="1">
+          <mxGeometry height="40" width="160" x="375" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#059669;verticalAlign=top;align=center;fontColor=#065F46;fontStyle=1;fontSize=11;" value="MCP servers — not extra proc" vertex="1">
+          <mxGeometry height="150" width="210" x="570" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp_vault" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#059669;fontColor=#065F46;fontSize=11;fontStyle=1;" value="MCP: deal-vault" vertex="1">
+          <mxGeometry height="36" width="160" x="595" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp_osm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#059669;fontColor=#065F46;fontSize=11;fontStyle=1;" value="MCP: OSM" vertex="1">
+          <mxGeometry height="36" width="160" x="595" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="tools_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#10B981;verticalAlign=top;align=left;spacingLeft=10;fontColor=#065F46;fontStyle=1;fontSize=11;" value="tools" vertex="1">
+          <mxGeometry height="410" width="220" x="820" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="t_query" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: query_units" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="t_income" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: compute_income" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="664" as="geometry" />
+        </mxCell>
+        <mxCell id="t_noi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: compute_noi" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="708" as="geometry" />
+        </mxCell>
+        <mxCell id="t_cap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: compute_cap_rate" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="752" as="geometry" />
+        </mxCell>
+        <mxCell id="t_osm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: OSM geocode" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="796" as="geometry" />
+        </mxCell>
+        <mxCell id="t_search" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: web_search" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="840" as="geometry" />
+        </mxCell>
+        <mxCell id="t_memo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1FAE5;strokeColor=#10B981;fontSize=11;" value="tool: publish_memo" vertex="1">
+          <mxGeometry height="32" width="180" x="840" y="884" as="geometry" />
+        </mxCell>
+        <mxCell id="replan" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Reflect then replan" vertex="1">
+          <mxGeometry height="40" width="160" x="1080" y="824" as="geometry" />
+        </mxCell>
+        <mxCell id="hitl" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="HITL save state" vertex="1">
+          <mxGeometry height="36" width="160" x="1080" y="884" as="geometry" />
+        </mxCell>
+        <mxCell id="hitl_deny" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1B365D;strokeColor=#1B365D;fontColor=#FFFFFF;fontSize=10;" value="User: HITL denied,&#xa;publish not approved" vertex="1">
+          <mxGeometry height="52" width="180" x="1270" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="hitl_stop" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#FCE7F3;strokeColor=#BE185D;fontColor=#9F1239;fontSize=10;" value="Stop — turn ends.&#xa;Session saved.&#xa;User already has a message" vertex="1">
+          <mxGeometry height="56" width="190" x="1270" y="888" as="geometry" />
+        </mxCell>
+        <mxCell id="sticky_reflect" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=18;fillColor=#FEF08A;strokeColor=#CA8A04;align=left;spacingLeft=8;verticalAlign=top;fontSize=10;" value="1. Replan if …&#xa;2. Tools and facts conflict&#xa;3. Conflicting facts —&#xa;at least one of these&#xa;before every tool call" vertex="1">
+          <mxGeometry height="110" width="200" x="360" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="sticky_ci" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=18;fillColor=#FEF08A;strokeColor=#CA8A04;align=left;spacingLeft=8;verticalAlign=top;fontSize=10;" value="CI completeness&#xa;GroundTruth in fixtures&#xa;(not the live path)" vertex="1">
+          <mxGeometry height="80" width="200" x="360" y="950" as="geometry" />
+        </mxCell>
+        <mxCell id="match" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;fontStyle=1;" value="Vault/calc&#xa;numbers match?" vertex="1">
+          <mxGeometry height="100" width="180" x="90" y="1030" as="geometry" />
+        </mxCell>
+        <mxCell id="mismatch" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontSize=11;" value="Either UI do not&#xa;present as fact" vertex="1">
+          <mxGeometry height="48" width="170" x="360" y="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="bad_num" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#FCE7F3;strokeColor=#BE185D;fontColor=#9F1239;fontSize=10;" value="User error:&#xa;do not present bad numbers" vertex="1">
+          <mxGeometry height="52" width="190" x="560" y="1046" as="geometry" />
+        </mxCell>
+        <mxCell id="judges" parent="1" style="rounded=1;whiteSpace=wrap;html=1;align=left;spacingLeft=8;fillColor=#F8FAFC;strokeColor=#475569;fontSize=10;" value="Use judges on grade:&#xa;R analog: query vs answer&#xa;G analog: vault-tied spans&#xa;user C: covered request" vertex="1">
+          <mxGeometry height="72" width="220" x="70" y="1160" as="geometry" />
+        </mxCell>
+        <mxCell id="retry_used" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;fontStyle=1;" value="Eval retry&#xa;already used?" vertex="1">
+          <mxGeometry height="92" width="160" x="360" y="1150" as="geometry" />
+        </mxCell>
+        <mxCell id="stop_eval" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#FCE7F3;strokeColor=#BE185D;fontColor=#9F1239;fontSize=10;" value="Stop — turn ends.&#xa;User already has the error" vertex="1">
+          <mxGeometry height="52" width="200" x="560" y="1160" as="geometry" />
+        </mxCell>
+        <mxCell id="g_retry" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;fontStyle=1;" value="G or low-C&#xa;retry?" vertex="1">
+          <mxGeometry height="92" width="160" x="90" y="1260" as="geometry" />
+        </mxCell>
+        <mxCell id="first_retry" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#475569;fontSize=10;fontStyle=1;" value="First retry?" vertex="1">
+          <mxGeometry height="84" width="150" x="360" y="1266" as="geometry" />
+        </mxCell>
+        <mxCell id="reflect_retry" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=11;" value="Reflect + retry&#xa;a.k.a. Zap 1s" vertex="1">
+          <mxGeometry height="48" width="170" x="560" y="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="show" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontSize=12;fontStyle=1;" value="Show answer" vertex="1">
+          <mxGeometry height="40" width="160" x="90" y="1380" as="geometry" />
+        </mxCell>
+        <mxCell id="warn" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontSize=11;" value="Warning if tool&#xa;available + log" vertex="1">
+          <mxGeometry height="44" width="160" x="350" y="1380" as="geometry" />
+        </mxCell>
+        <mxCell id="warn_user" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;fillColor=#FCE7F3;strokeColor=#BE185D;fontColor=#9F1239;fontSize=10;" value="User: warning answer" vertex="1">
+          <mxGeometry height="48" width="170" x="560" y="1378" as="geometry" />
+        </mxCell>
+        <mxCell id="traces" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=10;" value="Dynamo traces&#xa;(not the user) as TRACE#" vertex="1">
+          <mxGeometry height="52" width="180" x="80" y="1450" as="geometry" />
+        </mxCell>
+        <mxCell id="user_answer" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1B365D;strokeColor=#1B365D;fontColor=#FFFFFF;fontStyle=1;fontSize=12;" value="User: answer" vertex="1">
+          <mxGeometry height="44" width="160" x="90" y="1530" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="text;html=1;align=left;fontSize=11;fontColor=#64748B;" value="Navy = user-visible · Pink = stop · Green = MCP/tools · Purple = skills · Dashed orange = retry/replan · Dashed gray = vault facts. Reload the file in diagrams.net (File → Open)." vertex="1">
+          <mxGeometry height="24" width="1400" x="40" y="1600" as="geometry" />
+        </mxCell>
+        <mxCell id="e-user-harness" edge="1" parent="1" source="user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#334155;fontSize=10;fontColor=#334155;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" target="harness" value="asks question">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="74" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-user-ingest" edge="1" parent="1" source="user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#334155;fontSize=10;fontColor=#334155;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" target="ingest" value="attaches CSV/xlsx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1570" y="74" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-harness-scope" edge="1" parent="1" source="harness" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="scope" />
+        <mxCell id="e-scope-oos" edge="1" parent="1" source="scope" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;fontSize=10;fontColor=#9F1239;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="oos" value="IRRELEVANT" />
+        <mxCell id="e-oos-stop" edge="1" parent="1" source="oos" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="oos_stop" />
+        <mxCell id="e-scope-inv" edge="1" parent="1" source="scope" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="inventory" />
+        <mxCell id="e-inv-multi" edge="1" parent="1" source="inventory" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="multi" />
+        <mxCell id="e-multi-skip" edge="1" parent="1" source="multi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" target="skip" value="no" />
+        <mxCell id="e-multi-decomp" edge="1" parent="1" source="multi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" target="decomp" value="yes" />
+        <mxCell id="e-decomp-reflect" edge="1" parent="1" source="decomp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="reflect_plan" />
+        <mxCell id="e-skip-fact" edge="1" parent="1" source="skip" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" target="fact" />
+        <mxCell id="e-reflect-fact" edge="1" parent="1" source="reflect_plan" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" target="fact" />
+        <mxCell id="e-fact-react" edge="1" parent="1" source="fact" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#2563EB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="react" />
+        <mxCell id="e-react-compact" edge="1" parent="1" source="react" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="compact" />
+        <mxCell id="e-compact-r2" edge="1" parent="1" source="compact" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="reflect_two" />
+        <mxCell id="e-r2-struct" edge="1" parent="1" source="reflect_two" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="structured" />
+        <mxCell id="e-struct-eval" edge="1" parent="1" source="structured" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#DB2777;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="evalsvc" />
+        <mxCell id="e-ingest-detect" edge="1" parent="1" source="ingest" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="detect" />
+        <mxCell id="e-detect-parse" edge="1" parent="1" source="detect" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="parse" />
+        <mxCell id="e-parse-pii" edge="1" parent="1" source="parse" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="pii" />
+        <mxCell id="e-pii-vault" edge="1" parent="1" source="pii" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="vault" />
+        <mxCell id="e-vault-ack" edge="1" parent="1" source="vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="ack" />
+        <mxCell id="e-react-skills" edge="1" parent="1" source="react" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#7C3AED;exitX=1;exitY=0.35;entryX=0;entryY=0.2;" target="skills_lane" />
+        <mxCell id="e-mcpv-query" edge="1" parent="1" source="mcp_vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#059669;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="t_query" />
+        <mxCell id="e-mcpv-inc" edge="1" parent="1" source="mcp_vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#059669;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" target="t_income" />
+        <mxCell id="e-mcpv-noi" edge="1" parent="1" source="mcp_vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#059669;exitX=1;exitY=1;entryX=0;entryY=0.5;" target="t_noi" />
+        <mxCell id="e-mcpv-cap" edge="1" parent="1" source="mcp_vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#059669;exitX=1;exitY=0.9;entryX=0;entryY=0.5;" target="t_cap" />
+        <mxCell id="e-mcpo-osm" edge="1" parent="1" source="mcp_osm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#059669;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="t_osm" />
+        <mxCell id="e-search-replan" edge="1" parent="1" source="t_search" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#B45309;fontSize=10;fontColor=#B45309;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="replan" value="error" />
+        <mxCell id="e-memo-hitl" edge="1" parent="1" source="t_memo" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="hitl" value="HITL" />
+        <mxCell id="e-hitl-deny" edge="1" parent="1" source="hitl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;fontSize=10;fontColor=#9F1239;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="hitl_deny" value="deny" />
+        <mxCell id="e-deny-stop" edge="1" parent="1" source="hitl_deny" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="hitl_stop" />
+        <mxCell id="e-eval-match" edge="1" parent="1" source="evalsvc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="match" />
+        <mxCell id="e-match-mis" edge="1" parent="1" source="match" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#D97706;fontSize=10;fontColor=#B45309;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="mismatch" value="mismatch" />
+        <mxCell id="e-mis-bad" edge="1" parent="1" source="mismatch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="bad_num" />
+        <mxCell id="e-match-judges" edge="1" parent="1" source="match" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="judges" value="match" />
+        <mxCell id="e-judges-used" edge="1" parent="1" source="judges" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="retry_used" />
+        <mxCell id="e-used-stop" edge="1" parent="1" source="retry_used" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;fontSize=10;fontColor=#9F1239;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="stop_eval" value="yes" />
+        <mxCell id="e-g-first" edge="1" parent="1" source="g_retry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="first_retry" value="yes" />
+        <mxCell id="e-first-zap" edge="1" parent="1" source="first_retry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="reflect_retry" value="yes" />
+        <mxCell id="e-first-warn" edge="1" parent="1" source="first_retry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#D97706;fontSize=10;fontColor=#B45309;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="warn" value="no" />
+        <mxCell id="e-warn-user" edge="1" parent="1" source="warn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#BE185D;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="warn_user" />
+        <mxCell id="e-g-show" edge="1" parent="1" source="g_retry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#475569;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="show" value="no" />
+        <mxCell id="e-show-traces" edge="1" parent="1" source="show" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#2563EB;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="traces" />
+        <mxCell id="e-traces-ans" edge="1" parent="1" source="traces" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=#1B365D;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="user_answer" />
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

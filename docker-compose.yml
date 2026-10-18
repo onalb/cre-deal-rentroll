@@ -1,0 +1,52 @@
+name: cre-deal-rentroll
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    # Host 8000 = ML-interview Dynamo, 8001 = dynamo-admin. This app uses 8003.
+    expose:
+      - "8000"
+    ports:
+      - "8003:8000"
+
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:latest
+    ports:
+      - "8004:8001"
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      - dynamodb
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    environment:
+      # In-compose Dynamo. To reuse ML-interview-dynamo-db instead, join
+      # ml-interview-net and set DDB_ENDPOINT=http://ML-interview-dynamo-db:8000
+      DDB_ENDPOINT: http://dynamodb:8000
+      DDB_TABLE: ml_interview
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      CRE_SKILLS_DIR: /app/skills
+    depends_on:
+      - dynamodb
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
