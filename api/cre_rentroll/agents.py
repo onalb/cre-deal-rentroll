@@ -213,7 +213,6 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "income, vacant) unless the user asked to map or search.\n"
         "Do not put tenant names in answers (they were stripped at ingest).\n"
         "Cite vault totals, calculator JSON, OSM, and article URLs as appropriate.\n"
-        "Never hardcode Miami office or $12.4M.\n"
         f"{facts}\n\n{skills}"
     )
 

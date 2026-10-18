@@ -973,7 +973,7 @@ def web_search(query: str, max_results: int = 5) -> str:
     """Search the public web (ddgs) for current articles.
 
     When: Q2 only if geo_confidence is low; Q3 multifamily cap-rate / sale news
-    for THIS property's city/metro (never hardcoded Miami office).
+    for THIS property's city/metro.
     What: query string; max_results default 5.
     How: returns title/href/snippet JSON. On failure return error JSON so the
     harness can reflect and replan (do not loop).
