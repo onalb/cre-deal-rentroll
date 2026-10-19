@@ -8,19 +8,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # secrets context is illegal inside step if: expressions.
+      HAS_AWS: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+      HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        if: env.HAS_AWS == 'true'
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - uses: aws-actions/amazon-ecr-login@v2
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        if: env.HAS_AWS == 'true'
         id: ecr
       - name: Build and push
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        if: env.HAS_AWS == 'true'
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           ECR_REPOSITORY: cre-deal-rentroll
@@ -33,7 +37,7 @@ jobs:
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
       - name: Create or update CloudFormation
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.OPENAI_API_KEY != '' }}
+        if: env.HAS_AWS == 'true' && env.HAS_OPENAI == 'true'
         run: |
           aws cloudformation deploy \
             --stack-name cre-deal-rentroll \
