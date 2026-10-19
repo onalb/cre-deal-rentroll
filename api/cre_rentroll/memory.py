@@ -52,10 +52,22 @@ def retrieve_facts(username: str) -> dict[str, Any]:
 
 def facts_prompt(username: str) -> str:
     facts = retrieve_facts(username)
-    if not facts:
-        return "No LTM FACT# slots yet for this user."
     lines = [f"- {k}: {v}" for k, v in sorted(facts.items())]
-    return "Known deal facts (Dynamo LTM, auto-injected):\n" + "\n".join(lines)
+    ac_lines: list[str] = []
+    try:
+        from cre_rentroll.agentcore_platform import facts_from_memory
+
+        ac_lines = facts_from_memory(username)
+    except Exception:
+        ac_lines = []
+    parts: list[str] = []
+    if lines:
+        parts.append("Known deal facts (Dynamo LTM, auto-injected):\n" + "\n".join(lines))
+    if ac_lines:
+        parts.append("AgentCore Memory records:\n" + "\n".join(f"- {x}" for x in ac_lines[:8]))
+    if not parts:
+        return "No LTM FACT# slots yet for this user."
+    return "\n".join(parts)
 
 
 def generate_from_roll(username: str, roll: CanonicalRentRoll) -> None:
@@ -74,6 +86,12 @@ def generate_from_roll(username: str, roll: CanonicalRentRoll) -> None:
         if value is None or value == "":
             continue
         store.add(slot, value, overwrite=True)
+        try:
+            from cre_rentroll.agentcore_platform import write_fact_record
+
+            write_fact_record(username, slot, value)
+        except Exception:
+            pass
 
 
 def write_trace(
@@ -84,7 +102,7 @@ def write_trace(
     tools_called: list[str],
     scores: dict[str, Any],
     stop_reason: str,
-    preview: str,
+    preview: str = "",
 ) -> None:
     from cre_rentroll import dynamo
 

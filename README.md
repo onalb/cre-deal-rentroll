@@ -6,12 +6,14 @@ Not just tool calling: **scope → inventory → question**. Eval scores **groun
 
 ## Public URL (AWS)
 
-The interviewer URL is **App Runner** (one container: nginx UI + FastAPI). That is not AgentCore and not Lambda.
+Live front door: **https://umvtmdweif.us-east-1.awsapprunner.com**
 
-- **App Runner / ECS** — long-running UI+API. Strands ReAct stays in-process. Vault tools stay in-process.
-- **DynamoDB** table `ml_interview` — omit `DDB_ENDPOINT` so boto3 uses real AWS.
-- **Bedrock AgentCore** — optional later host for the agent runtime (`/invocations`), not the chat UI.
-- **Lambda** — optional later for `web_search` / OSM only. Do not put FastAPI + Strands on Lambda.
+That URL is **App Runner** (one container: nginx UI + FastAPI). It is the public chat URL, not the AgentCore Runtime host. ReAct runs on AgentCore Runtime `cre_deal_rentroll-Nh63z6GXmK` after App Runner calls `InvokeAgentRuntime`.
+
+- **App Runner** — UI + FastAPI login/ingest/HITL. Chat turns call `InvokeAgentRuntime` when `AGENTCORE_RUNTIME_ARN` is set. Anyone else uses username only (no password).
+- **AgentCore Runtime** — Strands `run_agent` ReAct at `/invocations` (`deploy/Dockerfile.agentcore`). Not the AgentCore Harness product as the chat loop.
+- **DynamoDB** table `ml_interview` — login users and the rent-roll vault blob. Omit `DDB_ENDPOINT` so boto3 uses real AWS.
+- **Lambda** — AgentCore Gateway target (`cre-deal-rentroll-gateway`) for `cre_ping`, vault `query_units` / `compute_*`, `osm_geocode`, and `web_search`. FastMCP is fallback on Gateway miss. Do not put FastAPI + Strands on Lambda.
 
 Deploy: `deploy/Dockerfile` + `deploy/cloudformation.yaml`. GitHub Action: `.github/workflows/deploy.yml` (`workflow_dispatch`). Repo secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `OPENAI_API_KEY`.
 
@@ -66,6 +68,20 @@ A golden NOI file is optional for CI. Microsoft’s `CompletenessEvaluator` is t
 
 ## Stacks
 
-Strands = agent SDK. OpenAI = model. The product is a **web app** (UI + API + Dynamo). AgentCore is an optional later AWS host for the agent process, not the public URL.
+Strands is the agent **framework** (chat loop stays `run_agent` on Runtime). **App Runner** is the public chat URL. **AgentCore Runtime** hosts `/invocations` + `/ping`. Other diagram boxes are real AgentCore APIs on that invoke path (see mapping below). Dynamo `ml_interview` still holds login users and the rent-roll vault blob.
+
+| Diagram box | AWS resource / API | Status |
+|---|---|---|
+| Runtime | `cre_deal_rentroll-Nh63z6GXmK` (`InvokeAgentRuntime`) | live ReAct host (not the public URL) |
+| Harness / CLI / SDK | Harness `cre_deal_rentroll-O9vmgUgTse` + Runtime HTTP `/invocations` `/ping` | live |
+| Built-in tools | Code Interpreter `cre_deal_rentroll_ci-gn1EOecInj` + Browser `cre_deal_rentroll_browser-Ic5Tw7nTd6` | live (session pulse each turn) |
+| Gateway | MCP Gateway `credealrentroll-25yvwacjrd` + Lambda `cre-deal-rentroll-gateway` | live (vault/geo/search; in-process FastMCP fallback) |
+| Identity | Runtime header WAT when present; else mint user-created `cre_deal_rentroll_wli` (not service-linked runtime id) | live |
+| Memory | `CreDealRentrollMem-l47sZRGE6Y` STM events + semantic LTM; Dynamo still users + vault | live |
+| Policy | Engine `cre_deal_rentroll_policy-bcwtc8qmov` Cedar `allow_cre_tools` LOG_ONLY on Gateway | live |
+| Payments | unused | skipped (no microtransactions) |
+| Registry | `CreateRegistry` denied for this account root | skipped; skills from disk `skills/` |
+| Observability | ADOT/`opentelemetry-instrument` + dashboard `cre-deal-rentroll-agentcore` | live after runtime image |
+| Evaluations | `Evaluate` `Builtin.Faithfulness` after `score_gcr`; online config `cre_deal_rentroll_online-Y9tvcwAgAk` | live |
 
 Resident names on La Cordoba are stripped at ingest and should not be committed.

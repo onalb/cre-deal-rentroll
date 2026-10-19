@@ -119,7 +119,9 @@ def _is_empty_vault_error(exc: BaseException) -> bool:
 
 
 def _norm_task_text(raw: str) -> str:
-    return re.sub(r"\s+", " ", str(raw or "").strip()).strip(" -:;—–")
+    s = re.sub(r"\s+", " ", str(raw or "").strip()).strip(" -:;—–,")
+    s = re.sub(r"\s*\(\s*MCP\s*\)", "", s, flags=re.I)
+    return s.strip(" -:;—–,")
 
 
 def _token_status(token: str) -> str | None:
@@ -180,6 +182,35 @@ def _task_item(text: Any, status: Any = None) -> dict[str, str] | None:
     return {"text": body, "status": chosen if chosen in _TASK_STATUSES else "pending"}
 
 
+def _split_joined_tool_blob(blob: str) -> str:
+    """Turn 'osm_geocode, query_units' into two lines so each tool is its own task."""
+    names = sorted(WORK_TOOL_NAMES, key=len, reverse=True)
+    alt = "|".join(re.escape(n) for n in names)
+    mcp = r"(?:\s*\(\s*MCP\s*\))?"
+    tagged = r"(?:\s*\[[^\]]+\])?"
+    return re.sub(
+        rf"((?:{alt}){mcp}{tagged})\s*(?:,|/|;|\band\b|\bthen\b|\+)\s*(?=(?:{alt}))",
+        r"\1\n",
+        str(blob or ""),
+        flags=re.I,
+    )
+
+
+def _explode_task_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for it in items:
+        blob = _split_joined_tool_blob(str(it.get("text") or ""))
+        parts = [p for p in (_task_item(ln) for ln in _task_lines(blob)) if p]
+        if len(parts) <= 1:
+            out.append(it)
+            continue
+        for i, part in enumerate(parts):
+            if i == 0 and it.get("status") in _TASK_STATUSES and part["status"] == "pending":
+                part = {**part, "status": it["status"]}
+            out.append(part)
+    return out
+
+
 def _task_lines(blob: str) -> list[str]:
     """Split a tasks blob on newlines and on numbered markers (`1.`, `2)`)."""
     out: list[str] = []
@@ -214,7 +245,9 @@ def parse_task_items(tasks: Any) -> list[dict[str, str]]:
             return parse_task_items(json.loads(blob))
         except json.JSONDecodeError:
             pass
-    return [item for item in (_task_item(ln) for ln in _task_lines(blob)) if item]
+    blob = _split_joined_tool_blob(blob)
+    items = [item for item in (_task_item(ln) for ln in _task_lines(blob)) if item]
+    return _explode_task_items(items)
 
 
 def format_checklist(items: list[dict[str, str]]) -> str:
@@ -336,6 +369,113 @@ def apply_status_updates(
     return result, matched
 
 
+def _text_has_status_tag(raw: str) -> bool:
+    stripped = _BULLET_PREFIX.sub("", _NUM_PREFIX.sub("", str(raw or "").strip()))
+    tagged, _ = _split_status(stripped)
+    return tagged is not None
+
+
+def _tasks_omit_status_tags(tasks: Any) -> bool:
+    if isinstance(tasks, dict) and "tasks" in tasks:
+        if str(tasks.get("status") or "").strip():
+            return False
+        return _tasks_omit_status_tags(tasks.get("tasks"))
+    if isinstance(tasks, (list, tuple)):
+        if not tasks:
+            return False
+        for row in tasks:
+            if isinstance(row, dict):
+                if str(row.get("status") or "").strip():
+                    return False
+                blob = str(row.get("text") or row.get("task") or row.get("title") or "")
+                if _text_has_status_tag(blob):
+                    return False
+            elif _text_has_status_tag(str(row)):
+                return False
+        return True
+    blob = str(tasks or "").strip()
+    if not blob:
+        return False
+    if blob.startswith("[") or blob.startswith("{"):
+        try:
+            return _tasks_omit_status_tags(json.loads(blob))
+        except json.JSONDecodeError:
+            pass
+    blob = _split_joined_tool_blob(blob)
+    lines = _task_lines(blob)
+    if not lines:
+        return False
+    return not any(_text_has_status_tag(ln) for ln in lines)
+
+
+def _work_tools_ran_ok() -> set[str]:
+    names: set[str] = set()
+    for row in turn_ctx.traces() or []:
+        name = str(row.get("name") or "")
+        if name not in WORK_TOOL_NAMES:
+            continue
+        result = row.get("result")
+        if isinstance(result, dict) and result.get("ok") is False:
+            continue
+        names.add(name)
+    return names
+
+
+def _consecutive_status_without_work() -> bool:
+    for row in reversed(turn_ctx.traces() or []):
+        name = str(row.get("name") or "")
+        if name in WORK_TOOL_NAMES:
+            return False
+        if name == "update_plan_status":
+            return True
+    return False
+
+
+def _next_status_hint(items: list[dict[str, str]]) -> str:
+    for it in items:
+        if it.get("status") in _TERMINAL_STATUSES:
+            continue
+        label = _tool_or_item_label(str(it.get("text") or ""))
+        if label in WORK_TOOL_NAMES:
+            return f"Next is {label} — do not loop update_plan_status."
+        return "Next is the pending work tool — do not loop update_plan_status."
+    return "Next is score_gcr — do not loop update_plan_status."
+
+
+def _infer_completed_from_untagged(
+    previous: list[dict[str, str]],
+    incoming: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    keys = {_task_key(it["text"]) for it in incoming}
+    incoming_tools = {
+        _tool_or_item_label(it["text"])
+        for it in incoming
+        if _tool_or_item_label(it["text"]) in WORK_TOOL_NAMES
+    }
+    ran = _work_tools_ran_ok()
+    out: list[dict[str, str]] = []
+    inferred = False
+    for it in previous:
+        text = it.get("text") or ""
+        status = it.get("status") or "pending"
+        label = _tool_or_item_label(text)
+        hit = _task_key(text) in keys or label in incoming_tools
+        if (
+            hit
+            and status not in _TERMINAL_STATUSES
+            and label in ran
+        ):
+            status = "completed"
+            inferred = True
+        out.append({"text": text, "status": status})
+    if inferred:
+        for i, it in enumerate(out):
+            if it["status"] not in _TERMINAL_STATUSES:
+                out[i] = {"text": it["text"], "status": "in_progress"}
+                break
+    return out
+
+
 def _tool_or_item_label(text: str) -> str:
     blob = _norm_task_text(text)
     lower = blob.lower()
@@ -419,6 +559,8 @@ def plan_log_message(items: list[dict[str, str]], diff: dict[str, Any], *, tool:
     body = format_checklist(items) or "(empty checklist)"
     if diff.get("initial"):
         return f"{tool} — initial checklist\n{body}"
+    if not diff.get("changed"):
+        return f"{tool} — Plan unchanged\n{body}"
     bits: list[str] = []
     if diff.get("completed"):
         bits.append("completed: " + "; ".join(diff["completed"]))
@@ -447,6 +589,8 @@ def create_plan(tasks: str) -> str:
     with update_plan (never a second create_plan).
     Do not invent extra work. Match tools to the question — not always
     compute_income. Vacant-only can be a one-item checklist (query_units only).
+    Different work tools MUST be separate numbered lines (1. osm_geocode
+    2. query_units). Never one comma-joined item for two tools.
     One unfiltered query_units returns unit_count, occupied_count, vacant_count,
     occupancy_pct, and mtm_count (units on month-to-month leases). If several
     checklist intents are headline counts (units, occupancy, vacant, mtm_count),
@@ -633,15 +777,41 @@ def update_plan_status(tasks: str) -> str:
         }
         turn_ctx.record("update_plan_status", {"tasks": tasks}, payload)
         return "No checklist yet. Call create_plan first with the full numbered list."
+    if _consecutive_status_without_work():
+        plan = format_checklist(previous)
+        hint = (
+            "Rejected consecutive update_plan_status with no intervening work tool. "
+            + _next_status_hint(previous)
+        )
+        log = f"update_plan_status — Plan unchanged\n{hint}\n{plan}"
+        payload = {
+            "plan": plan,
+            "items": previous,
+            "diff": checklist_diff(previous, previous),
+            "changed": False,
+            "log": log,
+            "ok": False,
+            "rejected": True,
+            "hint": hint,
+        }
+        turn_ctx.record("update_plan_status", {"tasks": tasks}, payload)
+        return f"Plan unchanged. {hint}\n{plan}"
+    previous = _explode_task_items(previous)
     incoming = parse_task_items(tasks)
-    items, matched = apply_status_updates(previous, incoming)
+    if incoming and _tasks_omit_status_tags(tasks):
+        items = _infer_completed_from_untagged(previous, incoming)
+        matched = sum(
+            1 for it in previous if _task_key(it["text"]) in {_task_key(x["text"]) for x in incoming}
+        )
+    else:
+        items, matched = apply_status_updates(previous, incoming)
     diff = checklist_diff(previous, items)
     if not matched and incoming:
         diff = {**diff, "replaced_ignored": True}
     plan = format_checklist(items)
     turn_ctx.set_checklist(items)
     turn_ctx.set_llm_plan(plan)
-    log = plan_log_message(items, diff, tool="update_plan_status") if diff["changed"] else ""
+    log = plan_log_message(items, diff, tool="update_plan_status")
     payload = {
         "plan": plan,
         "items": items,
@@ -661,9 +831,7 @@ def update_plan_status(tasks: str) -> str:
         )
     if diff["changed"]:
         return f"Plan updated:\n{log}"
-    if log:
-        return f"{log}\nPlan unchanged:\n{plan}"
-    return f"Plan unchanged:\n{plan}"
+    return log
 
 
 def reflection(analysis: str, need_replan: bool = False) -> str:

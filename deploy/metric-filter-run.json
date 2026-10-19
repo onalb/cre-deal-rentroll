@@ -1,0 +1,14 @@
+{
+  "logGroupName": "/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT",
+  "filterName": "cre-deal-rentroll-agentcore-run",
+  "filterPattern": "\"RUN \"",
+  "metricTransformations": [
+    {
+      "metricName": "AgentCoreRunLines",
+      "metricNamespace": "CreDealRentroll",
+      "metricValue": "1",
+      "defaultValue": 0,
+      "unit": "Count"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+FROM --platform=linux/arm64 python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    CRE_SKILLS_DIR=/app/skills \
+    AGENTCORE_INSIDE=1 \
+    DDB_TABLE=ml_interview \
+    AWS_REGION=us-east-1 \
+    AGENT_OBSERVABILITY_ENABLED=true \
+    OTEL_PYTHON_DISTRO=aws_distro \
+    OTEL_PYTHON_CONFIGURATOR=aws_configurator \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_TRACES_EXPORTER=otlp \
+    OTEL_METRICS_EXPORTER=otlp \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-aws-log-group=/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT,x-aws-log-stream=otel,x-aws-metric-namespace=bedrock-agentcore
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY api/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY api/cre_rentroll /app/cre_rentroll
+COPY skills /app/skills
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD curl -fsS http://127.0.0.1:8080/ping || exit 1
+CMD ["opentelemetry-instrument", "uvicorn", "cre_rentroll.agentcore_app:app", "--host", "0.0.0.0", "--port", "8080"]

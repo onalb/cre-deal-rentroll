@@ -89,12 +89,27 @@ INVENTORIES = {"DealRentroll": BOOK}
 
 
 def load_skill_text(names: tuple[str, ...]) -> str:
+    try:
+        from cre_rentroll.agentcore_platform import load_registry_skills
+
+        registered = load_registry_skills(names)
+        if registered.strip():
+            return registered
+    except Exception:
+        pass
     chunks: list[str] = []
     for name in names:
         path = SKILLS_DIR / name / "SKILL.md"
         if path.is_file():
             chunks.append(f"### skill:{name}\n{path.read_text(encoding='utf-8')}")
-    return "\n\n".join(chunks)
+    text = "\n\n".join(chunks)
+    try:
+        from cre_rentroll.agentcore_platform import note_disk_skills
+
+        note_disk_skills(names, bool(text.strip()))
+    except Exception:
+        pass
+    return text
 
 
 def system_prompt(inv: Inventory, facts: str) -> str:
@@ -139,12 +154,20 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "User-facing sentences are prose only. Never copy (skill), (tool), (MCP), or "
         "(LLM) into the user sentence — those tags are operator logs, not the answer.\n"
         f"{file_scope}"
-        "FIRST action: always call create_plan ONCE with only the tools THIS user question needs "
-        "(including a single web_search, query_units, compute_*, or osm_geocode). "
+        "FIRST action: always call create_plan ONCE listing EVERY distinct ask in THIS user "
+        "question (map AND vacant/occupancy/units/income are separate numbered lines if both "
+        "were asked — never 'osm_geocode, query_units' as one item). "
         "Never skip create_plan on in-scope CRE — one work tool is still a one-item checklist. "
-        "Tag the current step [in_progress] and the rest [pending]. Do not call create_plan again. "
-        "Locate / map / where is this property → one osm_geocode item only, then score_gcr "
-        "with the map sentence. Do not add query_units, compute_income, or compute_noi. "
+        "One work tool per numbered line. Tag the current step [in_progress] and the rest "
+        "[pending]. Do not call create_plan again. "
+        "Locate / map / where is this property with NO other CRE ask → one osm_geocode item only, "
+        "then score_gcr with the map sentence. Do not add query_units on a map-only question. "
+        "If the same message also asks vacant, occupancy, units, or income, those MUST be "
+        "create_plan items from the start (osm_geocode + query_units, not map-only). "
+        "Never call a work tool that is not on the checklist. If you discover extra work after "
+        "create_plan, call update_plan with the NEW remaining work FIRST, then that tool. "
+        "osm_geocode query is the street address from FACT#/address_hint or the roll — never "
+        "the unit_count (do not geocode 'La Cordoba, 164' when 164 is unit count). "
         "Do not pad with abstract or underwrite steps unless the user asked for those numbers. "
         "Weather / sports / recipes / small talk: no create_plan and no other tools.\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
@@ -886,8 +909,9 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                     "type": "string",
                     "description": (
                         "Always FIRST on in-scope CRE, including a single web_search. "
-                        "Call ONCE at the start with only the tools this question needs. "
-                        "Never skip. Locate/map → one osm_geocode item, not query_units/income/NOI. "
+                        "Call ONCE at the start. One work tool per numbered line "
+                        "(1. osm_geocode  2. query_units) — never comma-join two tools. "
+                        "Map+vacant needs two lines. Map-only → one osm_geocode line. "
                         "Tag the current step [in_progress], the rest [pending]. "
                         "Do not call again — update_plan_status for statuses; "
                         "update_plan to replace the list on replan. "

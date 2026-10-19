@@ -1,0 +1,82 @@
+[
+  {
+    "name": "cre_ping",
+    "description": "AgentCore Gateway health ping. Not a CRE answer tool.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "username": { "type": "string" } }
+    }
+  },
+  {
+    "name": "query_units",
+    "description": "Query ingested rent-roll unit counts and occupancy.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "occupancy": { "type": "string" },
+        "vacant_only": { "type": "boolean" }
+      }
+    }
+  },
+  {
+    "name": "compute_income",
+    "description": "Compute in-place monthly income from the vault.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "vacant_fill_rent": { "type": "number" }
+      }
+    }
+  },
+  {
+    "name": "compute_noi",
+    "description": "Compute NOI from in-place income and optional opex.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "operating_expenses": { "type": "number" }
+      }
+    }
+  },
+  {
+    "name": "compute_cap_rate",
+    "description": "Implied cap rate from ask price and NOI.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "ask_price": { "type": "number" },
+        "noi": { "type": "number" }
+      },
+      "required": ["ask_price"]
+    }
+  },
+  {
+    "name": "osm_geocode",
+    "description": "Geocode a street address with OpenStreetMap Nominatim.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "query": { "type": "string" }
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "web_search",
+    "description": "Web search for market/news context.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "query": { "type": "string" },
+        "max_results": { "type": "integer" }
+      },
+      "required": ["query"]
+    }
+  }
+]

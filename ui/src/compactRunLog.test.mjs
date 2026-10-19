@@ -14,6 +14,22 @@ function msgs(out) {
 }
 
 {
+  const updated = (
+    "update_plan_status — checklist updated (completed: osm_geocode)\n"
+    + "1. [completed] osm_geocode\n"
+    + "2. [in_progress] query_units"
+  );
+  const out = compactRunLog(
+    rows(
+      ["tool", "update_plan_status (MCP) — " + updated + " (LLM)"],
+      ["plan", updated],
+    ),
+  );
+  assert.ok(steps(out).includes("plan"), "status change must stay in compact log");
+  assert.ok(msgs(out).some((m) => /\[completed\] osm_geocode/.test(m)));
+}
+
+{
   const checklist = "1. [pending] query_units\n2. [pending] compute_income";
   const out = compactRunLog(
     rows(
@@ -143,6 +159,54 @@ function msgs(out) {
   );
   assert.deepEqual(msgs(out), ["Draft before eval: Occupancy is 92.07%."]);
   assert.ok(!msgs(out).some((m) => /agent draft/i.test(m)));
+}
+
+{
+  const out = compactRunLog(
+    rows(
+      ["ingest", "La Cordoba Rent Roll, 164 units, parser=realpage"],
+      ["agentcore_eval", "failed ValidationException: no spans"],
+      ["react", "ReAct turn 1 — query_units (MCP)"],
+    ),
+  );
+  assert.ok(out.some((r) => r.step === "ingest"));
+  assert.ok(out.some((r) => r.step === "react"));
+  assert.ok(!out.some((r) => r.step === "agentcore_eval"));
+}
+
+{
+  const out = compactRunLog(
+    rows(
+      ["ingest", "La Cordoba Rent Roll, 164 units, parser=realpage"],
+      ["agentcore_runtime", "success POST /invocations on AgentCore Runtime"],
+      ["agentcore_payments", "skipped not provisioned"],
+      ["agentcore_identity", "success Runtime-injected WAT"],
+      ["agentcore_harness", "success bound"],
+      ["agentcore_memory", "success STM+LTM"],
+      ["agentcore_gateway", "success ping"],
+      ["agentcore_builtin", "success code interpreter + browser"],
+      ["agentcore_registry", "skipped not used"],
+      ["agentcore_policy", "success LOG_ONLY"],
+      ["agentcore_observability", "success OTEL enabled"],
+      ["inventory", "full tool menu (book)"],
+      ["skills", "attached rent-roll-abstract, citation-policy, underwriting"],
+      ["memory_context", "prior chat turns + vacant_count: 13"],
+      ["react", "ReAct turn 1 — create_plan (MCP)"],
+    ),
+  );
+  assert.deepEqual(steps(out).slice(0, 6), [
+    "ingest",
+    "agentcore",
+    "inventory",
+    "skills",
+    "memory_context",
+    "react",
+  ]);
+  assert.equal(out.filter((r) => r.step === "agentcore").length, 1);
+  assert.ok(/boxes OK \(runtime, identity, harness, memory, gateway/.test(out[1].message));
+  assert.ok(/skipped payments, registry/.test(out[1].message));
+  assert.ok(!steps(out).includes("agentcore_runtime"));
+  assert.ok(!steps(out).includes("agentcore_payments"));
 }
 
 console.log("compactRunLog tests ok");

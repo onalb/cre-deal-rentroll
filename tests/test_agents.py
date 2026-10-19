@@ -119,7 +119,7 @@ def test_emit_react_turn_suffix_omits_meta_and_unmatched():
         _emit_react_turn(2, ["score_gcr"])
         _emit_react_turn(3, ["reflection"])
         _emit_react_turn(4, ["create_plan"])
-        _emit_react_turn(5, ["osm_geocode"])
+        _emit_react_turn(5, ["compute_noi"])
         _emit_react_turn(6, [])
     finally:
         reset(token)
@@ -692,7 +692,8 @@ def test_reflection_only_draft_still_runs_score_gcr(monkeypatch):
     assert outcome.eval.G == 4
     assert outcome.stop_reason != "eval_error" or outcome.eval.judge != "not_run"
     assert not any("judge=not_run" in m for m in eval_msgs)
-    assert "Reflection stored: self-check ok" in (outcome.text or "")
+    assert "Reflection stored: self-check ok" not in (outcome.text or "")
+    assert "could not finish that answer this turn" in (outcome.text or "").lower()
 
 
 def test_empty_run_agent_goes_to_eval_not_vault_inject(monkeypatch):

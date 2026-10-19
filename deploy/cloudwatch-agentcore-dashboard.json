@@ -1,0 +1,113 @@
+{
+  "start": "-PT1H",
+  "periodOverride": "auto",
+  "widgets": [
+    {
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 2,
+      "properties": {
+        "markdown": "## AgentCore ReAct / RUN (all streams)\nQueries log group `/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT` across **every** microVM stream. Look for `RUN agentcore_<box>` (runtime, harness, identity, memory, gateway or tools_fastmcp, policy, builtin, skills, eval, observability). skipped|failed means that box did not succeed. Payments is never success. Default range: last 1 hour. Set **Refresh** to 1 minute. Do not use Last event time on the log group — idle `GET /ping` VMs sort first."
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 2,
+      "width": 24,
+      "height": 10,
+      "properties": {
+        "title": "Latest ReAct RUN lines (all streams)",
+        "region": "us-east-1",
+        "view": "table",
+        "query": "SOURCE '/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT'\n| fields @timestamp, @logStream, @message\n| filter @message like /RUN /\n| filter @message not like /GET \\/ping/\n| sort @timestamp desc\n| limit 100"
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 8,
+      "properties": {
+        "title": "Latest /invocations (POST, 422, 500)",
+        "region": "us-east-1",
+        "view": "table",
+        "query": "SOURCE '/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT'\n| fields @timestamp, @logStream, @message\n| filter @message like /\\/invocations/\n| filter @message like /POST / or @message like / 422/ or @message like / 500/\n| filter @message not like /GET \\/ping/\n| sort @timestamp desc\n| limit 50"
+      }
+    },
+    {
+      "type": "log",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 8,
+      "properties": {
+        "title": "Errors / exceptions",
+        "region": "us-east-1",
+        "view": "table",
+        "query": "SOURCE '/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT'\n| fields @timestamp, @logStream, @message\n| filter @message like /(?i)(error|exception|traceback| 500 )/\n| filter @message not like /GET \\/ping/\n| sort @timestamp desc\n| limit 50"
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 20,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "title": "RUN vs ping vs POST /invocations (5 min bins)",
+        "region": "us-east-1",
+        "view": "timeSeries",
+        "query": "SOURCE '/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT'\n| fields @timestamp, @message\n| filter @message like /RUN / or @message like /GET \\/ping/ or @message like /POST \\/invocations/\n| stats sum(strcontains(@message, \"RUN \")) as run_lines, sum(strcontains(@message, \"GET /ping\")) as ping_lines, sum(strcontains(@message, \"POST /invocations\")) as invocations by bin(5m)"
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 26,
+      "width": 12,
+      "height": 8,
+      "properties": {
+        "title": "Latest RUN agentcore_* box lines",
+        "region": "us-east-1",
+        "view": "table",
+        "query": "SOURCE '/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT'\n| fields @timestamp, @logStream, @message\n| filter @message like /RUN agentcore_/\n| sort @timestamp desc\n| limit 100"
+      }
+    },
+    {
+      "type": "log",
+      "x": 12,
+      "y": 26,
+      "width": 12,
+      "height": 8,
+      "properties": {
+        "title": "agentcore_* boxes (count by token)",
+        "region": "us-east-1",
+        "view": "table",
+        "query": "SOURCE '/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT'\n| fields @message\n| parse @message /RUN (?<box>agentcore_[a-z0-9_]+)/\n| filter ispresent(box)\n| stats count() as lines by box\n| sort box asc"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 34,
+      "width": 24,
+      "height": 5,
+      "properties": {
+        "title": "Metric filters: RUN / ping / invocations (last 1h)",
+        "region": "us-east-1",
+        "view": "timeSeries",
+        "stat": "Sum",
+        "period": 60,
+        "metrics": [
+          [ "CreDealRentroll", "AgentCoreRunLines", { "label": "RUN lines" } ],
+          [ ".", "AgentCorePingLines", { "label": "GET /ping" } ],
+          [ ".", "AgentCoreInvocations", { "label": "POST /invocations" } ]
+        ]
+      }
+    }
+  ]
+}

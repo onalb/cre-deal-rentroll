@@ -123,7 +123,31 @@ def book_mcp_impls() -> dict[str, Callable[..., str]]:
         "publish_memo": mcp_rentroll.publish_memo,
         "osm_geocode": mcp_osm.osm_geocode,
     }
-    return {name: _bound(fn, name) for name, fn in raw.items()}
+    return {name: _maybe_gateway(_bound(fn, name), name) for name, fn in raw.items()}
+
+
+def _maybe_gateway(fn: Callable[..., Any], name: str) -> Callable[..., Any]:
+    """Vault/geo/search go through AgentCore Gateway when the runtime is wired."""
+    from cre_rentroll.agentcore_platform import GATEWAY_TOOL_NAMES, gateway_call
+
+    if name not in GATEWAY_TOOL_NAMES:
+        return fn
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        bound = sig.bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        remote = gateway_call(name, dict(bound.arguments))
+        if remote is not None:
+            return remote
+        from cre_rentroll.agentcore_platform import note_fastmcp_fallback
+
+        note_fastmcp_fallback(name)
+        return fn(*args, **kwargs)
+
+    wrapped.__signature__ = sig  # type: ignore[attr-defined]
+    return wrapped
 
 
 def mcp_server_for(name: str) -> str | None:

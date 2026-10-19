@@ -1,0 +1,14 @@
+{
+  "logGroupName": "/aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT",
+  "filterName": "cre-deal-rentroll-agentcore-invocations",
+  "filterPattern": "\"POST /invocations\"",
+  "metricTransformations": [
+    {
+      "metricName": "AgentCoreInvocations",
+      "metricNamespace": "CreDealRentroll",
+      "metricValue": "1",
+      "defaultValue": 0,
+      "unit": "Count"
+    }
+  ]
+}

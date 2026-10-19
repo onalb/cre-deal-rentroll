@@ -55,11 +55,28 @@ def _user(x_username: str | None) -> str:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     key = bool(openai_api_key())
+    arn = (os.environ.get("AGENTCORE_RUNTIME_ARN") or "").strip()
+    inside = os.environ.get("AGENTCORE_INSIDE", "").strip() in {"1", "true", "yes"}
     return {
         "ok": True,
         "openai_key_present": key,
         "ddb_endpoint": os.environ.get("DDB_ENDPOINT") or "",
         "table": os.environ.get("DDB_TABLE", "ml_interview"),
+        "agent_host": "agentcore" if arn and not inside else "in_process",
+        "agentcore_configured": bool(arn),
+        "agentcore_boxes": {
+            "runtime": bool(arn),
+            "memory": bool(os.environ.get("AGENTCORE_MEMORY_ID")),
+            "gateway": bool(os.environ.get("AGENTCORE_GATEWAY_URL")),
+            "harness": bool(os.environ.get("AGENTCORE_HARNESS_ID")),
+            "identity": bool(os.environ.get("AGENTCORE_WORKLOAD_NAME")),
+            "evaluations": bool(os.environ.get("AGENTCORE_EVALUATOR_ID")),
+            "registry": bool(os.environ.get("AGENTCORE_REGISTRY_ID")),
+            "policy": bool(os.environ.get("AGENTCORE_POLICY_ENGINE_ID")),
+            "code_interpreter": bool(os.environ.get("AGENTCORE_CODE_INTERPRETER_ID")),
+            "browser": bool(os.environ.get("AGENTCORE_BROWSER_ID")),
+            "observability": os.environ.get("AGENT_OBSERVABILITY_ENABLED", "").lower() in {"1", "true", "yes"},
+        },
     }
 
 
@@ -133,7 +150,12 @@ def _run_chat_sync(
     if filename and raw is not None:
         if len(raw) > 8_000_000:
             raise HTTPException(413, "file too large")
-        outcomes.append(harness.ingest_attachment(user, filename, raw).model_dump())
+        # File-only ingest still prints RUN to CloudWatch; compact UI waits for a question Submit.
+        if text:
+            outcomes.append(harness.ingest_attachment(user, filename, raw).model_dump())
+        else:
+            with run_events.cloudwatch_only():
+                outcomes.append(harness.ingest_attachment(user, filename, raw).model_dump())
     if text:
         outcomes.append(
             harness.run_task(user, text, search_fail=fail, has_attachment=attached).model_dump()
@@ -197,7 +219,7 @@ async def chat(
         except HTTPException as exc:
             q.put(("error", {"message": str(exc.detail), "status": exc.status_code}))
         except Exception as exc:
-            q.put(("error", {"message": type(exc).__name__}))
+            q.put(("error", {"message": f"{type(exc).__name__}: {exc}"}))
         finally:
             run_events.reset(token)
             q.put(None)

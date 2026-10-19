@@ -33,6 +33,9 @@ def decompose(message: str, inventories: list[Inventory] | None = None) -> list[
 
 def _invoke_react(inv: Inventory, prompt: str, facts: str) -> str:
     """One Strands run_agent. Empty drafts go to eval as-is."""
+    from cre_rentroll.agentcore_platform import note_harness_react
+
+    note_harness_react()
     emit("llm", "Harness starting ReAct (LLM)")
     before_agent = turn_ctx.llm_call_kinds().count("agent")
     draft = run_agent(prompt, inv, facts)
@@ -149,6 +152,15 @@ def run_task(
     skip_scope: bool = False,
     persist_as: str | None = None,
 ) -> ChatOutcome:
+    from cre_rentroll.agentcore_client import invoke_run_task, should_invoke_remote
+
+    if should_invoke_remote() and not skip_scope:
+        return invoke_run_task(
+            username,
+            message,
+            search_fail=search_fail,
+            has_attachment=has_attachment,
+        )
     _ = has_attachment
     run_id = str(uuid.uuid4())[:8]
     shown_user = persist_as or user_visible(message)
@@ -164,6 +176,12 @@ def run_task(
     roll = vault.load_roll(username)
     has_vault = roll is not None
 
+    try:
+        from cre_rentroll.agentcore_platform import begin_turn
+
+        begin_turn(username)
+    except Exception:
+        pass
     inv = BOOK
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
@@ -171,6 +189,7 @@ def run_task(
     if inv.skills:
         emit("skills", f"attached {', '.join(inv.skills)}", skills=list(inv.skills))
     facts = _facts_for_agent(username, has_vault)
+    _emit_llm_memory_context(facts, messages)
     drafts: list[str] = []
     tools_called: list[str] = []
 
@@ -219,6 +238,7 @@ def run_task(
             draft = f"{note}\n{exc}"
         drafts.append(draft)
         tools_called.extend(t["name"] for t in traces)
+        _emit_if_reused_memory(draft, traces, facts, messages)
 
     draft_text = "\n\n".join(drafts)
     draft_text = _user_facing_draft(draft_text, traces)
@@ -383,14 +403,64 @@ def _persist(
             username,
             run_id=run_id,
             question=user_text,
-            tools_called=outcome.tools_called,
+            tools_called=outcome.tools_called or [],
             scores=outcome.eval.model_dump() if outcome.eval else {},
             stop_reason=outcome.stop_reason or "",
+            preview=(outcome.text or "")[:400],
+        )
+    except Exception:
+        pass
+    try:
+        from cre_rentroll.agentcore_platform import end_turn
+
+        end_turn(
+            username,
+            user_text=user_text,
+            assistant_text=outcome.text or "",
+            traces=traces,
+            scores=outcome.eval.model_dump() if outcome.eval else None,
         )
     except Exception:
         pass
     _ = measure_tokens(outcome.text)
     _ = traces
+
+
+def _emit_llm_memory_context(facts: str, history: list[dict[str, Any]] | None) -> None:
+    """Show the compact Run Log what Python stuffed in *before* Strands chose tools."""
+    prior = 0
+    for row in history or []:
+        role = str(row.get("role") or "").strip().lower()
+        if role in {"user", "assistant"} and str(row.get("content") or "").strip():
+            prior += 1
+    blob = " ".join((facts or "").split())
+    if len(blob) > 900:
+        blob = blob[:899] + "…"
+    emit(
+        "memory_context",
+        f"LLM facts block ({prior} prior chat turns also in session_prompt): {blob or '(empty)'}",
+    )
+
+
+def _emit_if_reused_memory(
+    draft: str,
+    traces: list[dict[str, Any]],
+    facts: str,
+    history: list[dict[str, Any]] | None,
+) -> None:
+    """Heuristic: Python cannot read a hidden LLM thought. Log when vault tools were skipped."""
+    names = {str(t.get("name") or "") for t in traces}
+    if names & {"query_units", "compute_income", "compute_noi", "compute_cap_rate"}:
+        return
+    low = (draft or "").lower()
+    if not any(w in low for w in ("vacant", "occupanc", "in-place", "unit")):
+        return
+    emit(
+        "memory_reuse",
+        "No vault MCP tool this turn, but the draft used roll numbers. "
+        "Python always auto-retrieves AgentCore Memory + Dynamo FACT# and prior chat; "
+        "it does not regex the question. The LLM skipped query_units — it already had those values in context.",
+    )
 
 
 def _facts_for_agent(username: str, has_vault: bool) -> str:

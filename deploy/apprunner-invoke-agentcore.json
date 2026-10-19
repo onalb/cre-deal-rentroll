@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeAgentCoreRuntime",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:InvokeAgentRuntime",
+        "bedrock-agentcore:InvokeAgentRuntimeForUser"
+      ],
+      "Resource": [
+        "arn:aws:bedrock-agentcore:us-east-1:226721156429:runtime/cre_deal_rentroll-Nh63z6GXmK",
+        "arn:aws:bedrock-agentcore:us-east-1:226721156429:runtime/cre_deal_rentroll-Nh63z6GXmK/runtime-endpoint/*"
+      ]
+    }
+  ]
+}

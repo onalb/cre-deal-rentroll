@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAppRunnerInvoke",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::226721156429:role/cre-deal-rentroll-InstanceRole-eMs0HMCEuvOF"
+      },
+      "Action": [
+        "bedrock-agentcore:InvokeAgentRuntime",
+        "bedrock-agentcore:InvokeAgentRuntimeForUser"
+      ],
+      "Resource": "arn:aws:bedrock-agentcore:us-east-1:226721156429:runtime/cre_deal_rentroll-Nh63z6GXmK"
+    }
+  ]
+}

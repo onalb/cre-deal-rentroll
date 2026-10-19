@@ -16,11 +16,28 @@ const DEMO_CHIPS = [
       "What's the unit count, occupancy, in-place monthly income, vacant count, and any month-to-month on this rent roll?",
   },
   {
-    id: "vacancies",
-    level: "easy",
-    label: "Vacant units",
+    id: "multi-1",
+    level: "medium",
+    label: "Multi-1",
     searchFail: false,
-    prompt: "How many units are vacant, and what is occupancy?",
+    prompt:
+      "Where is this property? Can you put it on a map, and how many units are vacant, and what is occupancy?",
+  },
+  {
+    id: "multi-2",
+    level: "medium",
+    label: "Multi-2",
+    searchFail: false,
+    prompt:
+      "What is in-place monthly income, and what would annualized NOI be if opex is 35% of EGI?",
+  },
+  {
+    id: "multi-3",
+    level: "medium",
+    label: "Multi-3",
+    searchFail: false,
+    prompt:
+      "Put this property on a map, how many units are month-to-month, and what cap rate is implied at a $12M ask?",
   },
   {
     id: "locate",
@@ -254,6 +271,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [searchFail, setSearchFail] = useState(false);
   const [runLog, setRunLog] = useState([]);
+  const [compactArmed, setCompactArmed] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [logExpanded, setLogExpanded] = useState(false);
@@ -263,7 +281,7 @@ export default function App() {
   const bottom = useRef(null);
   const logEnd = useRef(null);
   const fileInput = useRef(null);
-  const visibleRunLog = logCompact ? compactRunLog(runLog) : runLog;
+  const visibleRunLog = compactArmed ? (logCompact ? compactRunLog(runLog) : runLog) : [];
 
   useEffect(() => {
     api("/api/health", { timeoutMs: 8_000 }).then(setHealth).catch(() => setHealth({ ok: false }));
@@ -271,6 +289,8 @@ export default function App() {
 
   useEffect(() => {
     if (!username) return;
+    setRunLog([]);
+    setCompactArmed(false);
     api("/api/session", { username, timeoutMs: 8_000 })
       .then(setSession)
       .catch((e) => setError(e.message));
@@ -310,6 +330,7 @@ export default function App() {
     setUsername("");
     setSession(null);
     setRunLog([]);
+    setCompactArmed(false);
     setVaultOpen(false);
     setLogOpen(false);
     setLogExpanded(false);
@@ -339,7 +360,7 @@ export default function App() {
 
   async function copyRunLog(e) {
     e.stopPropagation();
-    if (!runLog.length) return;
+    if (!visibleRunLog.length) return;
     try {
       await navigator.clipboard.writeText(formatRunLogText(visibleRunLog));
       setLogCopied(true);
@@ -350,8 +371,15 @@ export default function App() {
     }
   }
 
+  function disarmCompactLog() {
+    if (busy) return;
+    setRunLog([]);
+    setCompactArmed(false);
+  }
+
   function fillChip(chip) {
     if (busy) return;
+    disarmCompactLog();
     setText(chip.prompt);
     setSearchFail(Boolean(chip.searchFail));
     setError("");
@@ -364,6 +392,7 @@ export default function App() {
     const outgoing = text;
     const outgoingFile = file;
     const failFlag = Boolean(searchFail);
+    const hasQuestion = Boolean(outgoing.trim());
     const rawUser = outgoing.trim() || (outgoingFile ? `[attached ${outgoingFile.name}]` : "");
     const userContent = displayContent({ role: "user", content: rawUser });
     setBusy(true);
@@ -371,6 +400,7 @@ export default function App() {
     setText("");
     setFile(null);
     setRunLog([]);
+    setCompactArmed(hasQuestion);
     collapseRunLog();
     setVaultOpen(false);
     setSession((s) => ({
@@ -385,14 +415,17 @@ export default function App() {
       const data = await streamChat({
         username,
         body: fd,
-        onLog: (ev) => setRunLog((rows) => [...rows, ev]),
+        onLog: (ev) => {
+          if (!hasQuestion) return;
+          setRunLog((rows) => [...rows, ev]);
+        },
       });
-      if (Array.isArray(data.logs) && data.logs.length) setRunLog(data.logs);
+      if (hasQuestion && Array.isArray(data.logs) && data.logs.length) setRunLog(data.logs);
       applySession(setSession, data);
       if (fileInput.current) fileInput.current.value = "";
       setFile(null);
     } catch (err) {
-      if (Array.isArray(err.data?.logs) && err.data.logs.length) setRunLog(err.data.logs);
+      if (hasQuestion && Array.isArray(err.data?.logs) && err.data.logs.length) setRunLog(err.data.logs);
       applySession(setSession, err.data);
       if (!err.data?.history) {
         setSession((s) => ({
@@ -578,7 +611,7 @@ export default function App() {
           <button
             type="button"
             className="ghost runlog-copy"
-            disabled={runLog.length === 0}
+            disabled={visibleRunLog.length === 0}
             title={logCopied ? "Copied" : "Copy run log"}
             aria-label={logCopied ? "Copied" : "Copy run log"}
             onClick={copyRunLog}
@@ -620,12 +653,12 @@ export default function App() {
           >
             <span className="runlog-status">
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
-              {runLogStatus(runLog, busy)}
+              {runLogStatus(visibleRunLog, busy && compactArmed)}
             </span>
           </button>
         </div>
         <div className="runlog-body" id="runlog-body" aria-hidden={!logOpen && !logExpanded}>
-          {runLog.length === 0 ? (
+          {visibleRunLog.length === 0 ? (
             <p className="hint">Inventory, plan, tools, drafts, retries, and eval appear here while a turn runs.</p>
           ) : (
             <ol>
@@ -656,7 +689,10 @@ export default function App() {
           placeholder="Ask a CRE question, or attach a rent roll…"
           value={text}
           disabled={busy}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            disarmCompactLog();
+            setText(e.target.value);
+          }}
         />
         <div className="chips" aria-label="Demo questions">
           {DEMO_CHIPS.map((chip) => (
@@ -681,7 +717,10 @@ export default function App() {
               type="file"
               accept=".csv,.xlsx,.xls"
               disabled={busy}
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                disarmCompactLog();
+                setFile(e.target.files?.[0] || null);
+              }}
             />
           </label>
           {file ? (

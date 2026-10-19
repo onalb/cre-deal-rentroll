@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
+import logging
 import re
+import sys
 import time
 
 MCP_TOOLS = frozenset(
@@ -39,6 +42,26 @@ _HAS_LLM = re.compile(r" \(LLM\)(?!\w)")
 
 Sink = Callable[[dict[str, Any]], None]
 _sink: ContextVar[Sink | None] = ContextVar("cre_run_sink", default=None)
+_log = logging.getLogger("cre.run")
+_CW_MAX = 1500
+
+
+def _ensure_run_log() -> None:
+    """App Runner / CloudWatch application logs are stdout. Uvicorn access is not enough."""
+    _log.setLevel(logging.INFO)
+    _log.propagate = False
+    if _log.handlers:
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    _log.addHandler(handler)
+
+
+def _cloudwatch_line(step: str, message: str) -> str:
+    one = " ".join((message or "").split())
+    if len(one) > _CW_MAX:
+        one = one[: _CW_MAX - 1] + "…"
+    return f"RUN {step} {one}"
 
 
 def bind(sink: Sink | None) -> Token:
@@ -47,6 +70,26 @@ def bind(sink: Sink | None) -> Token:
 
 def reset(token: Token) -> None:
     _sink.reset(token)
+
+
+@contextmanager
+def cloudwatch_only() -> Iterator[None]:
+    """Keep stdout RUN lines; do not fan out to the UI SSE / compact Run Log sink."""
+    token = bind(None)
+    try:
+        yield
+    finally:
+        reset(token)
+
+
+def replay(events: list[dict[str, Any]] | None) -> None:
+    """Fan in AgentCore logs to the App Runner SSE sink as they arrive (do not re-print RUN)."""
+    fn = _sink.get()
+    if fn is None:
+        return
+    for ev in events or []:
+        if isinstance(ev, dict):
+            fn(ev)
 
 
 def name_kind(name: str) -> str | None:
@@ -109,15 +152,17 @@ def _with_react_task_suffix(message: str, tool_names: Any) -> str:
 
 def emit(step: str, message: str, *, llm: bool = False, **data: Any) -> None:
     """Push one operator-visible workflow line. No PII, no unit grids."""
-    fn = _sink.get()
-    if fn is None:
-        return
     # Skills attach is an operator fact (prompt files), not a model/tool line.
     msg = message if step == "skills" else annotate_message(message)
     if step == "react":
         msg = _with_react_task_suffix(msg, data.get("tools"))
     if llm:
         msg = mark_llm(msg)
+    _ensure_run_log()
+    _log.info("%s", _cloudwatch_line(step, msg))
+    fn = _sink.get()
+    if fn is None:
+        return
     payload = {
         "step": step,
         "message": msg,

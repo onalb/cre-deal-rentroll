@@ -5,6 +5,7 @@ from cre_rentroll.run_events import (
     tool_message,
     bind,
     reset,
+    cloudwatch_only,
     labeled,
     annotate_message,
     mark_llm,
@@ -207,6 +208,27 @@ def test_emit_skills_attached_is_not_llm_or_tool():
     assert "(LLM)" not in seen[0]["message"]
     assert "(skill)" not in seen[0]["message"]
     assert "used skill" not in seen[0]["message"]
+
+
+def test_emit_writes_cloudwatch_line():
+    import logging
+
+    log = logging.getLogger("cre.run")
+    lines: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            lines.append(record.getMessage())
+
+    handler = Capture()
+    log.addHandler(handler)
+    token = bind(lambda _p: None)
+    try:
+        emit("react", "ReAct turn 1 — create_plan", llm=True, tools=["create_plan"])
+    finally:
+        reset(token)
+        log.removeHandler(handler)
+    assert any(x.startswith("RUN react ") and "create_plan" in x for x in lines)
 
 
 def test_emit_reaches_bound_sink():
@@ -631,6 +653,73 @@ def test_harness_mocked_agent_judge_count_and_tags(monkeypatch):
     react_is = [i for i, row in enumerate(seen) if row["step"] == "react"]
     assert skills_i == inv_i + 1
     assert not react_is or skills_i < react_is[0]
+
+
+def test_cloudwatch_only_does_not_fan_out_to_sse_sink():
+    seen = []
+    token = bind(seen.append)
+    try:
+        emit("inventory", "should reach sink")
+        with cloudwatch_only():
+            emit("ingest", "La Cordoba Rent Roll, 164 units")
+            emit("agentcore_memory", "wrote conversational STM")
+        emit("react", "after ingest")
+    finally:
+        reset(token)
+    assert [row["step"] for row in seen] == ["inventory", "react"]
+
+
+def test_ingest_only_chat_does_not_fill_sse_logs(monkeypatch):
+    from cre_rentroll.main import _run_chat_sync
+    from cre_rentroll.schemas import ChatOutcome
+
+    seen = []
+
+    def fake_ingest(user, filename, raw):
+        emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
+        emit("agentcore_memory", "wrote conversational STM")
+        return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
+
+    monkeypatch.setattr("cre_rentroll.harness.ingest_attachment", fake_ingest)
+    monkeypatch.setattr(
+        "cre_rentroll.main._decorate_outcomes",
+        lambda user, outcomes: dict(outcomes[-1]),
+    )
+    token = bind(seen.append)
+    try:
+        _run_chat_sync("tester", "", False, True, "roll.csv", b"abc")
+    finally:
+        reset(token)
+    assert seen == []
+
+
+def test_question_submit_still_streams_ingest_then_react(monkeypatch):
+    from cre_rentroll.main import _run_chat_sync
+    from cre_rentroll.schemas import ChatOutcome
+
+    seen = []
+
+    def fake_ingest(user, filename, raw):
+        emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
+        return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
+
+    def fake_task(user, text, search_fail=False, has_attachment=False):
+        emit("inventory", "full tool menu (book)")
+        emit("react", "ReAct turn 1")
+        return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")
+
+    monkeypatch.setattr("cre_rentroll.harness.ingest_attachment", fake_ingest)
+    monkeypatch.setattr("cre_rentroll.harness.run_task", fake_task)
+    monkeypatch.setattr(
+        "cre_rentroll.main._decorate_outcomes",
+        lambda user, outcomes: dict(outcomes[-1]),
+    )
+    token = bind(seen.append)
+    try:
+        _run_chat_sync("tester", "What's occupancy?", False, True, "roll.csv", b"abc")
+    finally:
+        reset(token)
+    assert [row["step"] for row in seen] == ["ingest", "inventory", "react"]
 
 
 def test_keep_run_preserves_llm_call_counts():

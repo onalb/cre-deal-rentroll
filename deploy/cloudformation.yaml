@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CRE Deal Rentroll — DynamoDB + App Runner (UI+API). AgentCore/Lambda are optional later.
+Description: CRE Deal Rentroll — DynamoDB + App Runner (UI+API). AgentCore dashboard/filters already exist out of band.
 
 Parameters:
   ImageUri:
@@ -12,6 +12,14 @@ Parameters:
   TableName:
     Type: String
     Default: ml_interview
+  AgentCoreLogGroup:
+    Type: String
+    Default: /aws/bedrock-agentcore/runtimes/cre_deal_rentroll-Nh63z6GXmK-DEFAULT
+    Description: AgentCore runtime log group (all microVM streams). Dashboard queries this, not App Runner.
+  AgentCoreRuntimeArn:
+    Type: String
+    Default: arn:aws:bedrock-agentcore:us-east-1:226721156429:runtime/cre_deal_rentroll-Nh63z6GXmK
+    Description: AgentCore Runtime ARN for App Runner chat invoke. Keep set so a stack update does not drop AGENTCORE_RUNTIME_ARN.
 
 Resources:
   Table:
@@ -56,6 +64,13 @@ Resources:
                   - dynamodb:Scan
                   - dynamodb:CreateTable
                 Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeAgentRuntime
+                  - bedrock-agentcore:InvokeAgentRuntimeForUser
+                Resource:
+                  - !Ref AgentCoreRuntimeArn
+                  - !Sub "${AgentCoreRuntimeArn}/runtime-endpoint/*"
 
   AccessRole:
     Type: AWS::IAM::Role
@@ -90,6 +105,8 @@ Resources:
                 Value: !Ref AWS::Region
               - Name: OPENAI_API_KEY
                 Value: !Ref OpenAIApiKey
+              - Name: AGENTCORE_RUNTIME_ARN
+                Value: !Ref AgentCoreRuntimeArn
       InstanceConfiguration:
         Cpu: "1 vCPU"
         Memory: "2 GB"
@@ -107,3 +124,7 @@ Outputs:
     Value: !Sub https://${Service.ServiceUrl}
   TableNameOut:
     Value: !Ref Table
+  AgentCoreDashboardUrl:
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=cre-deal-rentroll-agentcore
+  AgentCoreLogGroupOut:
+    Value: !Ref AgentCoreLogGroup

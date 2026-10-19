@@ -143,12 +143,70 @@ function prevMatching(rows, i, pred) {
   return null;
 }
 
+function isBoxPulse(row) {
+  return /^agentcore_/.test(step(row));
+}
+
+function isDroppedEvalPulse(row) {
+  return step(row) === "agentcore_eval" && /validationexception|\bno spans\b/i.test(msg(row));
+}
+
+function boxName(row) {
+  return step(row).replace(/^agentcore_/, "");
+}
+
+function summarizeBoxCluster(cluster) {
+  const ok = [];
+  const skipped = [];
+  const failed = [];
+  for (const row of cluster) {
+    const name = boxName(row);
+    const text = msg(row);
+    if (/^skipped\b/i.test(text)) skipped.push(name);
+    else if (/^failed\b/i.test(text)) failed.push(name);
+    else ok.push(name);
+  }
+  let message;
+  if (failed.length) {
+    message = `boxes failed (${failed.join(", ")})`;
+    if (ok.length) message += `; ok ${ok.join(", ")}`;
+    if (skipped.length) message += `; skipped ${skipped.join(", ")}`;
+  } else if (ok.length) {
+    message = `boxes OK (${ok.join(", ")})`;
+    if (skipped.length) message += `; skipped ${skipped.join(", ")}`;
+  } else {
+    message = `boxes skipped (${skipped.join(", ")})`;
+  }
+  const last = cluster[cluster.length - 1] || {};
+  return { ...last, step: "agentcore", message };
+}
+
+function foldBoxPulses(rows) {
+  const out = [];
+  for (let i = 0; i < rows.length; ) {
+    if (!isBoxPulse(rows[i])) {
+      out.push(rows[i]);
+      i += 1;
+      continue;
+    }
+    const cluster = [];
+    while (i < rows.length && isBoxPulse(rows[i])) {
+      if (!isDroppedEvalPulse(rows[i])) cluster.push(rows[i]);
+      i += 1;
+    }
+    if (cluster.length) out.push(summarizeBoxCluster(cluster));
+  }
+  return out;
+}
+
 /**
  * Filter a full run-log event list for interview display/copy.
  * Does not mutate the input rows except when cloning summary to append character count.
  */
 export function compactRunLog(rows) {
   if (!rows?.length) return [];
+
+  rows = foldBoxPulses(rows);
 
   const summaryRow = [...rows].reverse().find((r) => step(r) === "summary");
   const summaryMsg = summaryRow ? msg(summaryRow) : "";
@@ -175,7 +233,8 @@ export function compactRunLog(rows) {
 
     if (st === "plan") {
       const prev = rows[i - 1];
-      if (isTaskTool(prev) && coveredBy(text, [msg(prev)])) continue;
+      const statusChanged = /\[[^\]]*completed[^\]]*\]/i.test(text) || /\bcompleted:/i.test(text);
+      if (isTaskTool(prev) && coveredBy(text, [msg(prev)]) && !statusChanged) continue;
       out.push(row);
       continue;
     }
@@ -209,6 +268,12 @@ export function compactRunLog(rows) {
       const body = draftBody(text);
       const alreadySame = out.some((r) => step(r) === "draft" && draftBody(msg(r)) === body);
       if (alreadySame) continue;
+      out.push(row);
+      continue;
+    }
+
+    if (st === "agentcore_eval") {
+      if (/validationexception|\bno spans\b/i.test(text)) continue;
       out.push(row);
       continue;
     }

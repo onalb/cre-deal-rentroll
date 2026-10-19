@@ -159,6 +159,47 @@ def test_mcp_create_plan_once_runs_and_stores_checklist():
     assert any(row["step"] == "plan" for row in seen)
 
 
+def test_parse_task_items_splits_comma_joined_work_tools():
+    items = parse_task_items("osm_geocode (MCP), query_units (MCP)")
+    assert [it["text"] for it in items] == ["osm_geocode", "query_units"]
+    reset_turn("tester")
+    create_plan("osm_geocode (MCP), query_units (MCP)")
+    assert [it["text"] for it in checklist()] == ["osm_geocode", "query_units"]
+    out = update_plan_status("osm_geocode (MCP) [completed], query_units (MCP) [in_progress]")
+    assert "plan updated" in out.lower() or "completed" in out.lower()
+    assert [it["status"] for it in checklist()] == ["completed", "in_progress"]
+    assert "[completed] osm_geocode" in out
+    assert "[in_progress] query_units" in out
+
+
+def test_update_plan_status_infers_completed_when_untagged_after_work():
+    reset_turn("tester")
+    create_plan("1. [pending] compute_income")
+    record("compute_income", {}, {"ok": True, "in_place_monthly": 80019})
+    out = update_plan_status("1. compute_income (MCP)")
+    assert "plan updated" in out.lower()
+    assert "checklist updated" in out.lower()
+    assert checklist()[0]["status"] == "completed"
+    assert "[completed] compute_income" in out
+    again = update_plan_status("1. compute_income (MCP)")
+    assert "rejected consecutive" in again.lower()
+    assert "next is score_gcr" in again.lower()
+    assert "do not loop" in again.lower()
+    assert "checklist updated" not in again.lower()
+    assert "plan unchanged" in again.lower()
+    assert checklist()[0]["status"] == "completed"
+
+
+def test_update_plan_status_infers_next_in_progress_for_untagged_list():
+    reset_turn("tester")
+    create_plan("1. [in_progress] query_units\n2. [pending] compute_income")
+    record("query_units", {}, {"ok": True, "unit_count": 164})
+    out = update_plan_status("1. query_units (MCP), 2. compute_income (MCP)")
+    assert [it["status"] for it in checklist()] == ["completed", "in_progress"]
+    assert "[completed] query_units" in out
+    assert "[in_progress] compute_income" in out
+
+
 def test_parse_task_items_splits_numbered_items_on_one_line():
     blob = (
         "1. [pending] Summarize unit count and occupancy. "
@@ -213,6 +254,7 @@ def test_update_plan_matches_after_one_line_numbered_create():
         "2. [in_progress] Compute in-place monthly income."
     )
     assert "unchanged" in noop.lower()
+    assert "checklist updated" not in noop.lower()
 
 
 def test_parse_task_items_completed_and_in_progress_aliases():
@@ -221,7 +263,7 @@ def test_parse_task_items_completed_and_in_progress_aliases():
         "2. [completed] compute_income\n"
         "3. compute_noi — done\n"
         "4. **in_progress** score_gcr\n"
-        "5. [ ] web_search"
+        "5. [ ] publish_memo"
     )
     assert [it["status"] for it in items] == [
         "completed",
@@ -585,7 +627,10 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "first job" not in sys
     assert "answer without tools" in sys
     assert "where is this property" in sys
-    assert "one osm_geocode item" in sys
+    assert "one osm_geocode" in sys
+    assert "must be create_plan items" in sys
+    assert "never call a work tool that is not on the checklist" in sys
+    assert "one work tool per numbered line" in sys
     assert "do not pad with abstract" in sys
     assert "never the out-of-scope refuse" in sys
     assert "including locate/map" in sys
@@ -720,22 +765,25 @@ def test_consecutive_update_plan_applies_without_vault_tool():
     assert "Plan updated:" in first
     assert last_tool_name() == "update_plan_status"
     second = update_plan_status("1. [completed] query_units\n2. [completed] compute_income")
-    assert "update_plan skipped" not in second
-    assert checklist()[1]["status"] == "completed"
+    assert "rejected consecutive" in second.lower()
+    assert "do not loop" in second.lower()
+    assert "next is compute_income" in second.lower()
+    assert "checklist updated" not in second.lower()
+    assert checklist()[1]["status"] == "in_progress"
     reflection("statuses look right")
     third = update_plan_status("1. [completed] query_units\n2. [completed] compute_income")
-    assert "unchanged" in third.lower()
-    assert checklist()[1]["status"] == "completed"
+    assert "rejected consecutive" in third.lower()
+    assert checklist()[1]["status"] == "in_progress"
 
 
 def test_second_update_plan_completes_compute_income_after_trace():
     reset_turn("tester")
     create_plan("1. [in_progress] query_units\n2. [pending] compute_income")
     record("query_units", {}, {"ok": True, "unit_count": 164})
-    record("compute_income", {}, {"ok": True, "in_place_monthly": 80019})
     first = update_plan_status("1. [completed] query_units\n2. [in_progress] compute_income")
     assert "Plan updated:" in first
     assert checklist()[1]["status"] == "in_progress"
+    record("compute_income", {}, {"ok": True, "in_place_monthly": 80019})
     second = update_plan_status("1. [completed] query_units\n2. [completed] compute_income")
     assert "Plan updated:" in second
     assert [it["status"] for it in checklist()] == ["completed", "completed"]
@@ -749,7 +797,10 @@ def test_consecutive_update_after_all_vault_tools_is_status_only():
     done = update_plan_status("1. [completed] query_units\n2. [completed] compute_income")
     assert [it["status"] for it in checklist()] == ["completed", "completed"]
     again = update_plan_status("1. [completed] query_units\n2. [completed] compute_income")
-    assert "update_plan skipped" not in again
+    assert "rejected consecutive" in again.lower()
+    assert "next is score_gcr" in again.lower()
+    assert "do not loop" in again.lower()
+    assert "checklist updated" not in again.lower()
     assert [it["status"] for it in checklist()] == ["completed", "completed"]
 
 
@@ -759,12 +810,12 @@ def test_second_update_completes_in_place_monthly_income_phrase_after_traces():
         "1. [in_progress] query_units\n2. [pending] Compute in-place monthly income"
     )
     record("query_units", {}, {"ok": True, "unit_count": 164, "occupied_count": 151})
-    record("compute_income", {}, {"ok": True, "in_place_monthly": 80019})
     first = update_plan_status(
         "1. [completed] query_units\n"
         "2. [pending] Compute in-place monthly income"
     )
     assert checklist()[1]["status"] == "pending"
+    record("compute_income", {}, {"ok": True, "in_place_monthly": 80019})
     second = update_plan_status(
         "1. [completed] query_units\n"
         "2. [completed] Compute in-place monthly income"
