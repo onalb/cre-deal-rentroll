@@ -580,17 +580,32 @@ def create_plan(tasks: str) -> str:
     """Create this turn's ReAct checklist once. Intelligence is in the args.
 
     WHEN TO USE: FIRST action on every in-scope CRE ask (abstract / geo / underwrite
-    / web_search news). Call ONCE even if there is only one work tool (a one-item
-    checklist). Locate/map is one osm_geocode item — not query_units, compute_income,
-    or compute_noi. Tag the current step [in_progress], the rest [pending].
+    / web_search news / CRE definitions). Call ONCE. One numbered line per needed
+    work tool — not per comma in the user sentence. A one-item checklist is fine
+    when that one tool answers the whole last message (this-deal occupancy only →
+    query_units; map-only → osm_geocode; vacant-only → query_units; definition of
+    a rent roll → web_search; one web_search). Only if THIS last message asks for
+    map AND month-to-month AND cap: list osm_geocode, query_units, and
+    compute_cap_rate as three items. Never copy that three-item list onto a
+    definition or occupancy-only ask. Locate/map with no other CRE ask is one
+    osm_geocode item — not query_units, compute_income, or compute_noi. Never
+    osm_geocode / compute_cap_rate / compute_noi unless THIS last message asked.
+    Tag the current step [in_progress], the rest [pending].
 
-    WHEN NOT: Do not skip because the ask is a single web_search or vault call.
+    WHEN NOT: Weather, sports, recipes, identity, greetings, the agent's name,
+    chitchat, or other non-deal chat — do not call this tool.
+    Do not skip because the ask is a single web_search or vault call.
     Do not call again — mark statuses with update_plan_status; rewrite the list
     with update_plan (never a second create_plan).
-    Do not invent extra work. Match tools to the question — not always
-    compute_income. Vacant-only can be a one-item checklist (query_units only).
-    Different work tools MUST be separate numbered lines (1. osm_geocode
-    2. query_units). Never one comma-joined item for two tools.
+    If you must call a work tool that is not on the checklist, update_plan with
+    the missing items FIRST, then that tool.
+    Do not invent extra work. Match tools to THIS last message — not always
+    compute_income, and not prior-session Multi-2/Multi-3 tools sitting in memory.
+    Vacant-only can be a one-item checklist (query_units only). Different work
+    tools MUST be separate numbered lines. If THIS last message asks map AND MTM
+    AND cap, that is 1. osm_geocode  2. query_units  3. compute_cap_rate — never
+    one comma-joined item for two tools. That example is conditional, not a
+    default checklist.
     One unfiltered query_units returns unit_count, occupied_count, vacant_count,
     occupancy_pct, and mtm_count (units on month-to-month leases). If several
     checklist intents are headline counts (units, occupancy, vacant, mtm_count),
@@ -649,12 +664,16 @@ def update_plan(tasks: str) -> str:
     """Replace this turn's checklist with a new plan. Status-only: update_plan_status.
 
     WHEN TO USE: need_replan (score_gcr G/C <= 2, failed search, wrong metro/query,
-    steps cannot answer). Send the NEW remaining work only. Tag the current step
-    [in_progress], the rest [pending]. Do not call create_plan again.
+    steps cannot answer), or a needed work tool is missing from the checklist.
+    Send the NEW remaining work only (add omitted workstreams). Tag the current step
+    [in_progress], the rest [pending]. Do not call create_plan again. Never run an
+    off-list work tool before this call. If the last ask is a CRE definition and
+    the draft was off-topic deal numbers, do not add vault calculators or
+    osm_geocode — rewrite a cited definition (web_search if needed).
 
     WHEN NOT: After a successful vault/search/geocode/memo hit just to mark
     [completed] — that is update_plan_status. Do not use this as the first tool
-    (create_plan first). Weather / small talk: no plan tools.
+    (create_plan first). Weather / identity / greetings / chitchat: no plan tools.
 
     What: `tasks` is a numbered checklist of new work (same shape as create_plan).
     How: Keeps existing [completed] and [incomplete] rows, then appends the new
@@ -693,9 +712,10 @@ def update_plan(tasks: str) -> str:
         }
         turn_ctx.record("update_plan", {"tasks": tasks}, payload)
         return (
-            "Search already failed. Marked search [incomplete]. Do not call web_search again. "
-            "Write your own user-facing sentence that metro news is unavailable, then "
-            "score_gcr that sentence. Do not copy this tool result to the user."
+            "Search already failed (unavailable). Marked search [incomplete]. "
+            "Do not call web_search again. Write your own user-facing sentence, then "
+            "score_gcr that sentence. Mention cap rates / comps / metro news only if "
+            "the user asked for those. Do not copy this tool result to the user."
         )
     if not incoming:
         plan = format_checklist(previous)
@@ -842,14 +862,15 @@ def reflection(analysis: str, need_replan: bool = False) -> str:
        (query_units, compute_income, compute_noi, or compute_cap_rate) — not after
        every tool.
     2. Error analysis when a tool failed or returned empty. If web_search is down,
-       replan: skip market compare and say news is unavailable. If osm_geocode
+       replan: do not retry; mention news/comps only if the user asked. If osm_geocode
        failed, replan: state uncertainty; optional search if geo_confidence is low.
        Do not loop the same failed call.
     3. Result synthesis before assembling the user-facing draft.
     4. SELF-CHECK after the vault tool the question needed. If incomplete, set
        need_replan, call update_plan with a NEW numbered list, then pick
        query_units vs compute_income — once, not until turn 12. Vacant-only does not require compute_income.
-       Occupancy/income → compute_income.
+       Occupancy/income (this deal) → compute_income. Definition asks: do not add
+       vault calculators; rewrite a cited definition (web_search if needed).
        Do not always call compute_income. After a vault tool, call
        update_plan_status with that step [completed] and the next
        [in_progress], then continue. When the checklist is done, draft the
@@ -870,11 +891,15 @@ def reflection(analysis: str, need_replan: bool = False) -> str:
     if need_replan:
         if web_search_failed():
             return (
-                "Search already failed. Do not call web_search again. "
-                "Mark the search item [incomplete], then write your own sentence that "
-                "metro news is unavailable and score_gcr that sentence. "
-                "Do not copy this tool result to the user."
+                "Search already failed (unavailable). Do not call web_search again. "
+                "Mark the search item [incomplete], then write your own sentence and "
+                "score_gcr that sentence. Mention cap rates / comps / metro news only "
+                "if the user asked for those. Do not copy this tool result to the user."
             )
+        from cre_rentroll.eval_service import ask_is_conceptual, need_replan_hint
+
+        if ask_is_conceptual(turn_ctx.eval_query() or ""):
+            return need_replan_hint(turn_ctx.eval_query() or "")
         return (
             "Need replan: call update_plan with the NEW remaining work. "
             "Completed/incomplete rows stay on the list. Do not call create_plan again. "
@@ -1192,15 +1217,23 @@ def score_gcr(draft: str) -> str:
     WHEN TO USE: SELF-CHECK before the user-facing answer. Required before text-only
     end_turn on a CRE/rent-roll answer. Call once with the exact sentence you would
     show. Forbidden to stop with a sentence and no score_gcr. If min(G, request_C) <= 2,
-    need_replan / call more vault tools, then score_gcr again. vault_calc N/A (a cited
-    number not in the vault allowlist, including derived math) is not a fail. Do not
-    return to the user until G/C are ok or you hit the turn limit. Do not require
-    RollAbstract JSON.
+    need_replan, then score_gcr again. Do not add vault calculators when the ask is a
+    CRE definition and the draft was off-topic deal numbers — rewrite a cited
+    definition (web_search if needed). vault_calc N/A (a cited
+    number not in the vault allowlist, including derived math) is not a fail. Conceptual
+    CRE definitions do not need occupancy/income/unit figures. Do not return to the user
+    until G/C are ok or you hit the turn limit. Do not require RollAbstract JSON.
 
     WHEN NOT: Not after every MCP hit. Not a substitute for query_units / compute_*.
+    Not for out-of-scope identity, greetings, weather, or chitchat (no tools at all).
     Intelligence is in choosing WHEN; this body runs the live judge + vault_calc_ok.
     """
-    from cre_rentroll.eval_service import live_judge, vault_calc_invented_hits, vault_calc_log_label
+    from cre_rentroll.eval_service import (
+        live_judge,
+        need_replan_hint,
+        vault_calc_invented_hits,
+        vault_calc_log_label,
+    )
 
     text = str(draft or "").strip()
     query = turn_ctx.eval_query() or ""
@@ -1229,18 +1262,10 @@ def score_gcr(draft: str) -> str:
     turn_ctx.set_eval_scores(scores)
     if scores.judge in {"error", "empty"}:
         decision = "need_replan"
-        hint = (
-            "need_replan — call update_plan with NEW remaining work (completed "
-            "rows are kept), then those work tools, then score_gcr again"
-        )
+        hint = need_replan_hint(query, vault_label=None)
     elif scores.vault_calc_ok is False or min(g, c) <= 2:
         decision = "need_replan"
-        hint = (
-            "need_replan — call update_plan with NEW remaining work (not create_plan; "
-            "completed rows are kept), then those work tools, then score_gcr again"
-        )
-        if invented:
-            hint = f"{hint}; {vault_label}"
+        hint = need_replan_hint(query, vault_label=vault_label if invented else None)
     else:
         decision = "ok"
         hint = "ok to show this sentence"

@@ -119,12 +119,15 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         file_scope = (
             "The rent roll is already ingested (VAULT HAS). Never ask the user to "
             "attach a file. When VAULT HAS: never emit the out-of-scope refuse "
-            "sentence (I only answer questions about an uploaded rent roll). "
+            "sentence for CRE asks (units, occupancy, income, locate/map, "
+            "buy/worth/value, underwriting). "
             "Buy / worth / should I acquire / value is in-scope underwriting — "
             "call create_plan then compute_income and compute_noi (opex optional). "
             "If opex or ask price is missing, mark value/buy [incomplete], say what "
             "the roll supports (units, occupancy, in-place income), and do not refuse. "
-            "Out-of-scope remains only weather, sports, recipes, or small talk. "
+            "Identity, greetings, the agent's name, chitchat, weather, sports, "
+            "recipes, or other non-deal chat stay out of scope even with a vaulted "
+            "roll — no tools, use the refuse sentence. "
             "Locate / map / where is this property: never pass a "
             "spreadsheet filename or 'Rent Roll' title to osm_geocode. Use FACT# "
             "address_hint if it is a street/city. If geo_confidence is low or the "
@@ -139,37 +142,51 @@ def system_prompt(inv: Inventory, facts: str) -> str:
             "query_units / compute_* / osm_geocode / web_search — there is no property name "
             "or address until a roll is attached:\n"
             f"{NEED_FILE_TEXT}\n"
+            "Identity, greetings, the agent's name, chitchat, weather, sports, recipes, "
+            "or other non-deal chat still use the out-of-scope refuse, not the need-file "
+            "sentence.\n"
         )
     return (
         "You are the CRE Deal Rentroll agent (one ReAct loop, full tool menu). "
         "Intent is your first create_plan checklist — Python does not pick a specialist. "
         "Python does not start a second run_agent if the draft is empty.\n"
-        "Map / locate / where is this property / put it on a "
+        "Map / locate / where is this property / street / coordinates / put it on a "
         "map is in-scope CRE (same as units, occupancy, income, underwriting) — never "
-        "the out-of-scope refuse. Buy / worth / should I acquire / value is in-scope "
+        "the out-of-scope refuse. Short follow-ups (again, pronouns, that street) stay "
+        "in-scope. Buy / worth / should I acquire / value is in-scope "
         "underwriting even with no opex or ask price — never the out-of-scope refuse. "
-        "Weather, sports, recipes, small talk, or other non-deal chat: answer without "
-        "tools using this exact text:\n"
+        "Do not introduce yourself or answer identity, greetings, or the agent's name. "
+        "Weather, sports, recipes, identity, greetings, the agent's name, chitchat, "
+        "or other non-deal chat: answer without tools using this exact text:\n"
         f"{OOS_TEXT}\n"
         "User-facing sentences are prose only. Never copy (skill), (tool), (MCP), or "
         "(LLM) into the user sentence — those tags are operator logs, not the answer.\n"
         f"{file_scope}"
-        "FIRST action: always call create_plan ONCE listing EVERY distinct ask in THIS user "
-        "question (map AND vacant/occupancy/units/income are separate numbered lines if both "
-        "were asked — never 'osm_geocode, query_units' as one item). "
-        "Never skip create_plan on in-scope CRE — one work tool is still a one-item checklist. "
+        "FIRST action on in-scope CRE: always call create_plan ONCE listing each needed work tool "
+        "as a numbered line — not one item per comma or clause in the user sentence, and never "
+        "'osm_geocode, query_units' as one item. "
+        "Never skip create_plan on in-scope CRE. A one-item checklist is fine when that one tool "
+        "answers the whole last message (this-deal occupancy only → query_units; map-only → "
+        "osm_geocode; definition of a rent roll → web_search; one web_search). "
         "One work tool per numbered line. Tag the current step [in_progress] and the rest "
         "[pending]. Do not call create_plan again. "
         "Locate / map / where is this property with NO other CRE ask → one osm_geocode item only, "
         "then score_gcr with the map sentence. Do not add query_units on a map-only question. "
-        "If the same message also asks vacant, occupancy, units, or income, those MUST be "
-        "create_plan items from the start (osm_geocode + query_units, not map-only). "
+        "If THIS last message needs map AND MTM AND cap, those MUST be create_plan items from the "
+        "start (osm_geocode, query_units, compute_cap_rate — not map-only). That three-item list "
+        "is only for that ask — never copy it onto a definition, occupancy-only, or other CRE turn. "
         "Never call a work tool that is not on the checklist. If you discover extra work after "
-        "create_plan, call update_plan with the NEW remaining work FIRST, then that tool. "
+        "create_plan, call update_plan with the NEW remaining work FIRST (add the missing items), then that tool. "
         "osm_geocode query is the street address from FACT#/address_hint or the roll — never "
-        "the unit_count (do not geocode 'La Cordoba, 164' when 164 is unit count). "
-        "Do not pad with abstract or underwrite steps unless the user asked for those numbers. "
-        "Weather / sports / recipes / small talk: no create_plan and no other tools.\n"
+        "the unit_count (do not geocode 'La Cordoba, 164' when 164 is unit count) and never "
+        "the trade name alone when address_hint has a street/city (e.g. Panindícuaro). "
+        "Do not pad with abstract or underwrite steps unless THIS last message asked for those numbers. "
+        "Do not re-run prior-session map / occupancy / income / NOI / cap tools unless THIS message asked. "
+        "Conceptual CRE (what is a rent roll, occupancy, NOI): one web_search (or one definitional "
+        "item), then score_gcr your cited definition — never osm_geocode / compute_cap_rate / "
+        "compute_noi / query_units unless THIS message asked for location or this deal's figures. "
+        "Weather / sports / recipes / identity / greetings / the agent's name / "
+        "chitchat: no create_plan, no score_gcr, and no other tools.\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
         "compute_noi, compute_cap_rate, osm_geocode, web_search, or publish_memo). After that vault "
         "tool, call update_plan_status with the SAME items: mark that step [completed] and the next "
@@ -194,6 +211,9 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "not status-only on the failed steps). [completed] and [incomplete] rows stay on the "
         "list automatically — do not drop them. Then those work tools, then "
         "score_gcr again — never invent query_units/income/NOI for a locate-only ask. "
+        "If the last ask is a CRE definition and the draft was off-topic deal numbers, "
+        "do not add vault calculators; rewrite a cited definition (web_search if needed) "
+        "and score_gcr again. "
         "Do not call score_gcr after every MCP hit. Do not call reflection after every "
         "tool — that burns the turn limit. Do not loop create_plan + update_plan + reflection with "
         "no vault work until the turn cap. Do not loop need_replan until turn 12.\n"
@@ -204,7 +224,9 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Do not wait for Python to replan or inject tools.\n"
         "If web_search fails (search down / forced failure), do not call web_search again. "
         "Mark that search item [incomplete], then YOU write a short user-facing sentence "
-        "that metro news is unavailable and call score_gcr with that sentence. "
+        "and call score_gcr with that sentence. Mention cap rates, comps, sales news, or "
+        "metro news only if THIS user question asked for those. Occupancy, rent-roll "
+        "definitions, identity, and other non-comp asks must not mention cap rates. "
         "Never copy Need replan / update_plan / update_plan_status / tool-return text "
         "into the user sentence — Python does not write that answer for you.\n"
         "Still use vault MCP tools for numbers. Match the tool to the question: "
@@ -372,7 +394,10 @@ def _strands_tools(names: tuple[str, ...]) -> list[Any]:
     `book_mcp_impls` keeps the original Python/FastMCP signatures (create_plan(tasks),
     query_units(occupancy, vacant_only), …). Do not wrap *args/**kwargs — Strands
     builds Pydantic from inspect.signature and would then require args+kwargs.
+    Empty names (out-of-scope): do not import FastMCP or start Gateway clients.
     """
+    if not names:
+        return []
     from strands import tool as strands_tool
 
     from cre_rentroll.mcp_runtime import book_mcp_impls
@@ -835,7 +860,7 @@ def run_openai_tools(prompt: str, inv: Inventory, facts: str) -> str:
     ]
     from cre_rentroll.mcp_runtime import bind_turn_context, book_mcp_impls, clear_turn_context
 
-    impls = book_mcp_impls()
+    impls: dict[str, Callable[..., str]] = book_mcp_impls() if spec else {}
     bind_turn_context()
     try:
         return _run_openai_tools_loop(client, model, spec, messages, impls)
@@ -855,7 +880,11 @@ def _run_openai_tools_loop(
     react_text = ""
     for turn_i in range(1, 13):
         try:
-            resp = client.chat.completions.create(model=model, messages=messages, tools=spec, tool_choice="auto")
+            create_kw: dict[str, Any] = {"model": model, "messages": messages}
+            if spec:
+                create_kw["tools"] = spec
+                create_kw["tool_choice"] = "auto"
+            resp = client.chat.completions.create(**create_kw)
             turn_ctx.add_llm_from_response("agent", resp)
         except Exception as exc:
             if is_rate_limited(exc):
@@ -878,7 +907,14 @@ def _run_openai_tools_loop(
         for tc in msg.tool_calls:
             name = tc.function.name
             args = json.loads(tc.function.arguments or "{}")
-            impl = impls[name]
+            impl = impls.get(name)
+            if impl is None:
+                payload = {"ok": False, "error": "tool not bound"}
+                turn_ctx.record(name, args, payload)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(payload)}
+                )
+                continue
             try:
                 out = impl(**args)
             except Exception as exc:
@@ -909,12 +945,18 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                     "type": "string",
                     "description": (
                         "Always FIRST on in-scope CRE, including a single web_search. "
-                        "Call ONCE at the start. One work tool per numbered line "
-                        "(1. osm_geocode  2. query_units) — never comma-join two tools. "
-                        "Map+vacant needs two lines. Map-only → one osm_geocode line. "
+                        "Call ONCE at the start. One numbered line per needed work tool "
+                        "(not per comma in the user sentence) — never comma-join two tools. "
+                        "A one-item list is fine when that one tool answers the whole last message "
+                        "(this-deal occupancy only → query_units; definition of a rent roll → "
+                        "web_search). Only if THIS last message asks map AND MTM AND cap: "
+                        "osm_geocode, query_units, and compute_cap_rate as three items. "
+                        "Never copy that three-item list onto a definition or occupancy-only ask. "
+                        "Map-only → one osm_geocode line. "
                         "Tag the current step [in_progress], the rest [pending]. "
                         "Do not call again — update_plan_status for statuses; "
-                        "update_plan to replace the list on replan. "
+                        "update_plan to add missing tools or replace the list on replan. "
+                        "Never call a work tool that is not on the checklist: update_plan first, then that tool. "
                         "If several checklist intents are headline counts (units, occupancy, "
                         "vacant, mtm_count), that is ONE unfiltered query_units item, not four. "
                         "After an unfiltered query_units this turn, do not call query_units "
@@ -933,6 +975,9 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                         "On need_replan, send NEW remaining work only (wrong metro/query, "
                         "failed search). Same shape as create_plan. Completed/incomplete "
                         "rows are kept automatically. Never a second create_plan. "
+                        "If the last ask is a CRE definition and the draft was off-topic "
+                        "deal numbers, do not add vault calculators or osm_geocode — rewrite "
+                        "a cited definition (web_search if needed). "
                         "Status-only is update_plan_status."
                     ),
                 }
@@ -977,7 +1022,9 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                     "description": (
                         "The exact user-facing sentence to score. Required before text-only "
                         "end_turn on a CRE/rent-roll answer. Forbidden to stop with a sentence "
-                        "and no score_gcr."
+                        "and no score_gcr. If need_replan on a definition ask with off-topic "
+                        "deal numbers, do not add vault calculators — rewrite a cited "
+                        "definition (web_search if needed) and score_gcr again."
                     ),
                 }
             },

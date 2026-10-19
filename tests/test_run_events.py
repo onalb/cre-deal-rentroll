@@ -362,6 +362,25 @@ def test_stop_summary_confidence_na_when_judge_not_run():
     assert "vault mismatch" not in msg
 
 
+def test_stop_summary_confidence_na_out_of_scope():
+    seen = []
+    token = bind(seen.append)
+    try:
+        emit_stop_and_summary(
+            "out of scope",
+            traces=[],
+            retry_n=0,
+            scores=EvalScores(judge="not_run"),
+            token_text="What's your name",
+            skills=[],
+        )
+    finally:
+        reset(token)
+    msg = seen[-1]["message"]
+    assert "confidence n/a (out of scope)" in msg
+    assert "judge not run" not in msg
+
+
 def test_mark_llm_is_idempotent():
     assert mark_llm("CRE abstract") == "CRE abstract (LLM)"
     assert mark_llm("CRE abstract (LLM)") == "CRE abstract (LLM)"

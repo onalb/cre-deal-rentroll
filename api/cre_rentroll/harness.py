@@ -10,8 +10,15 @@ from cre_rentroll.eval_service import format_eval_log, gate
 from cre_rentroll.ingest import ack_text, as_of_from_message, ingest_bytes
 from cre_rentroll.memory import facts_prompt, generate_from_roll, write_trace
 from cre_rentroll.schemas import CanonicalRentRoll, ChatOutcome, EvalScores
-from cre_rentroll.present import answer_prose, is_operator_leak, scope_fail_chat, user_visible
-from cre_rentroll.scope import SEARCH_DOWN_TEXT
+from cre_rentroll.present import (
+    answer_prose,
+    is_operator_leak,
+    last_scored_prose,
+    scope_fail_chat,
+    strip_operator_echo,
+    user_visible,
+)
+from cre_rentroll.scope import classify_scope
 from cre_rentroll.run_events import emit, emit_stop_and_summary
 
 
@@ -58,10 +65,24 @@ def compact(text: str, limit: int = 8000) -> str:
 SESSION_PROMPT_LIMIT = 8000
 _SESSION_FOLLOW = (
     "Answer the last User message. Prior User/Assistant turns are this session's "
-    "chat memory — use them like a normal conversation (follow-ups, pronouns, "
-    "'the same as…'). Do not ignore the last message to re-dump an earlier "
-    "occupancy or count answer. In-scope CRE: first tool is always create_plan "
-    "(one-item list is fine; do not skip for a lone web_search)."
+    "chat memory — use them for CRE follow-ups, pronouns, and 'the same as…'. "
+    "Do not ignore the last message to re-dump an earlier occupancy or count answer. "
+    "Do not re-run earlier map / MTM / income / NOI / cap tools just because those "
+    "asks sit in session memory. Plan only the work THIS last message needs. "
+    "If that last message is identity, greetings, the agent's name, chitchat, "
+    "weather, sports, recipes, or other non-deal chat: no tools and no score_gcr; "
+    "use the system-prompt refuse sentence. In-scope CRE (units, occupancy, map, "
+    "street, coordinates, income, underwriting, rent-roll definitions): first tool is always create_plan. "
+    "One numbered line per needed work tool — not per comma in the user sentence. "
+    "A one-item list is fine when that one tool answers the whole last message "
+    "(this-deal occupancy only → query_units; map-only → osm_geocode; definition of "
+    "a rent roll → web_search; one web_search). "
+    "Only if THIS last message asks for map AND month-to-month AND cap: list "
+    "osm_geocode, query_units, and compute_cap_rate. Never copy that three-item list "
+    "onto a definition, occupancy-only, or other ask. Never osm_geocode / "
+    "compute_cap_rate / compute_noi unless THIS last message asked. "
+    "If you must call a work tool that is not on the checklist, update_plan with the missing items "
+    "FIRST, then that tool."
 )
 
 
@@ -175,20 +196,54 @@ def run_task(
     retry_used = bool(sess.get("eval_retry_used"))
     roll = vault.load_roll(username)
     has_vault = roll is not None
-
+    # Tool-less agent hop (IN_SCOPE vs OOS). Python does not lexicon-match CRE.
     try:
-        from cre_rentroll.agentcore_platform import begin_turn
+        cre_ask = classify_scope(shown_user, messages)
+    except Exception as exc:
+        if is_rate_limited(exc):
+            emit_stop_and_summary(
+                "OpenAI rate limited (429)",
+                traces=traces,
+                retry_n=turn_ctx.retry_count(),
+                token_text=shown_user,
+                started=turn_ctx.run_started(),
+            )
+            outcome = ChatOutcome(
+                kind="error",
+                text=RATE_LIMIT_TEXT,
+                stop_reason="openai_rate_limited",
+            )
+            _persist(username, messages, shown_user, outcome, run_id, traces)
+            return outcome
+        cre_ask = False
+    emit(
+        "llm",
+        f"scope hop (no tools) → {'IN_SCOPE' if cre_ask else 'OOS'} (LLM)",
+        llm=True,
+    )
 
-        begin_turn(username)
-    except Exception:
-        pass
-    inv = BOOK
+    if cre_ask:
+        try:
+            from cre_rentroll.agentcore_platform import begin_turn
+
+            begin_turn(username)
+        except Exception:
+            pass
+        inv = BOOK
+    else:
+        # Prompt-only OOS was ignored by ReAct (always create_plan / web_search).
+        # Offer no tools, skills, Gateway, or Memory so chitchat cannot MCP.
+        inv = Inventory(BOOK.name, (), ())
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
-    emit("inventory", "full tool menu (book)", inventories=[inv.name])
+    emit(
+        "inventory",
+        "full tool menu (book)" if cre_ask else "no tools (non-CRE ask)",
+        inventories=[inv.name],
+    )
     if inv.skills:
         emit("skills", f"attached {', '.join(inv.skills)}", skills=list(inv.skills))
-    facts = _facts_for_agent(username, has_vault)
+    facts = _facts_for_agent(username, has_vault) if cre_ask else ""
     _emit_llm_memory_context(facts, messages)
     drafts: list[str] = []
     tools_called: list[str] = []
@@ -238,10 +293,16 @@ def run_task(
             draft = f"{note}\n{exc}"
         drafts.append(draft)
         tools_called.extend(t["name"] for t in traces)
-        _emit_if_reused_memory(draft, traces, facts, messages)
+        if cre_ask:
+            _emit_if_reused_memory(draft, traces, facts, messages)
 
     draft_text = "\n\n".join(drafts)
     draft_text = _user_facing_draft(draft_text, traces)
+
+    if not cre_ask:
+        return _oos_chat(
+            username, messages, shown_user, traces, run_id, text=draft_text
+        )
 
     if _vault_need_file_hit(traces):
         return _scope_need_file(
@@ -272,17 +333,22 @@ def run_task(
 
 
 def _user_facing_draft(draft: str, traces: list[dict[str, Any]]) -> str:
-    """Do not show ReAct operator hints (Need replan / update_plan) as the answer."""
-    from cre_rentroll.tools import web_search_failed
-
+    """Do not show ReAct operator hints / checklists / score_gcr JSON as the answer."""
     prose = answer_prose(draft)
-    if not is_operator_leak(prose):
+    cleaned = strip_operator_echo(prose)
+    if cleaned and not is_operator_leak(cleaned):
+        return cleaned
+    if (prose or "").strip() and not is_operator_leak(prose):
         return prose
+    recovered = last_scored_prose(traces)
+    if recovered:
+        return recovered
+    if not (prose or "").strip():
+        return ""
     stored = turn_ctx.eval_scores()
     if stored is not None and getattr(stored, "judge", None) in {"empty", "not_run"}:
         turn_ctx.set_eval_scores(None)
-    if web_search_failed(traces):
-        return SEARCH_DOWN_TEXT
+    # Do not canned-answer a rent-roll definition. Model prose or this fallback.
     return (
         "I could not finish that answer this turn. "
         "Please send the question again."
@@ -293,8 +359,8 @@ def _ensure_score_gcr(draft: str) -> None:
     """If ReAct stopped with prose and never called score_gcr, run that tool once."""
     from cre_rentroll.tools import score_gcr
 
-    prose = answer_prose(draft)
-    if not (prose or "").strip():
+    prose = strip_operator_echo(answer_prose(draft))
+    if not (prose or "").strip() or is_operator_leak(prose):
         return
     if turn_ctx.eval_scores() is not None:
         return
@@ -346,9 +412,9 @@ def _eval_and_stop(
         judge=judge,
         gate=decision,
     )
-    prose = answer_prose(draft)
+    prose = _user_facing_draft(draft, traces)
     empty = not (prose or "").strip()
-    if empty:
+    if empty or is_operator_leak(prose):
         show = (
             "I could not produce a rent-roll answer this turn. "
             "Please send the question again."
@@ -392,6 +458,8 @@ def _persist(
     outcome: ChatOutcome,
     run_id: str,
     traces: list[dict[str, Any]],
+    *,
+    agentcore_boxes: bool = True,
 ) -> None:
     messages = messages + [
         {"role": "user", "content": user_text},
@@ -410,18 +478,19 @@ def _persist(
         )
     except Exception:
         pass
-    try:
-        from cre_rentroll.agentcore_platform import end_turn
+    if agentcore_boxes:
+        try:
+            from cre_rentroll.agentcore_platform import end_turn
 
-        end_turn(
-            username,
-            user_text=user_text,
-            assistant_text=outcome.text or "",
-            traces=traces,
-            scores=outcome.eval.model_dump() if outcome.eval else None,
-        )
-    except Exception:
-        pass
+            end_turn(
+                username,
+                user_text=user_text,
+                assistant_text=outcome.text or "",
+                traces=traces,
+                scores=outcome.eval.model_dump() if outcome.eval else None,
+            )
+        except Exception:
+            pass
     _ = measure_tokens(outcome.text)
     _ = traces
 
@@ -489,6 +558,45 @@ def _vault_need_file_hit(traces: list[dict[str, Any]]) -> bool:
         if isinstance(result, dict) and result.get("need_file"):
             return True
     return False
+
+
+def _oos_chat(
+    username: str,
+    messages: list[dict[str, Any]],
+    shown_user: str,
+    traces: list[dict[str, Any]],
+    run_id: str,
+    *,
+    text: str,
+) -> ChatOutcome:
+    """Keep the model wording. Do not swap in OOS_TEXT or run score_gcr / MCP."""
+    shown = strip_operator_echo(answer_prose(text))
+    if not (shown or "").strip() or is_operator_leak(shown):
+        shown = (
+            "I could not finish that answer this turn. "
+            "Please send the question again."
+        )
+    scores = EvalScores(judge="not_run")
+    emit_stop_and_summary(
+        "out of scope",
+        traces=traces,
+        retry_n=turn_ctx.retry_count(),
+        scores=None,
+        token_text=shown_user + (shown or ""),
+        skills=turn_ctx.plan_skills(),
+        started=turn_ctx.run_started(),
+    )
+    outcome = ChatOutcome(
+        kind="out_of_scope",
+        text=shown,
+        eval=scores,
+        stop_reason="out_of_scope",
+        tools_called=[],
+    )
+    _persist(
+        username, messages, shown_user, outcome, run_id, traces, agentcore_boxes=False
+    )
+    return outcome
 
 
 def _scope_need_file(

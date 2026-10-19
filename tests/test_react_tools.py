@@ -626,11 +626,22 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "classify_scope" not in sys
     assert "first job" not in sys
     assert "answer without tools" in sys
+    assert "identity" in sys
+    assert "agent's name" in sys
+    assert "chitchat" in sys
+    assert "what's your name" not in sys
+    assert "who are you" not in sys
     assert "where is this property" in sys
     assert "one osm_geocode" in sys
     assert "must be create_plan items" in sys
     assert "never call a work tool that is not on the checklist" in sys
     assert "one work tool per numbered line" in sys
+    assert "per needed work tool" in sys
+    assert "per asked workstream" not in sys
+    assert "not one item per comma" in sys or "not per comma" in sys
+    assert "one-item checklist is fine when that one tool" in sys
+    assert "compute_cap_rate" in sys
+    assert "add the missing items" in sys
     assert "do not pad with abstract" in sys
     assert "never the out-of-scope refuse" in sys
     assert "including locate/map" in sys
@@ -648,12 +659,20 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "weather, sports, recipes" in has
     empty = system_prompt(BOOK, "VAULT EMPTY: no rent roll is ingested.\n").lower()
     assert "please attach a rent-roll csv" in empty
+    assert "identity" in empty
+    assert "out-of-scope refuse" in empty or "need-file" in empty
     assert "do not require rollabstract json" in sys
     assert "need_replan until turn 12" in sys
-    create_doc = (create_plan.__doc__ or "").lower()
+    create_doc = " ".join((create_plan.__doc__ or "").lower().split())
+    assert "identity" in create_doc
+    assert "chitchat" in create_doc
     assert "every in-scope" in create_doc or "never skip" in create_doc
     assert "once" in create_doc
     assert "do not call again" in create_doc or "update_plan" in create_doc
+    assert "per needed work tool" in create_doc
+    assert "per asked workstream" not in create_doc
+    assert "one-item checklist is fine when that one tool" in create_doc
+    assert "update_plan with" in create_doc and "missing items" in create_doc
     assert "mtm_count" in create_doc
     assert "existence/yes-no" in create_doc
     assert "one unfiltered query_units" in create_doc
@@ -736,6 +755,15 @@ def test_agents_openai_specs_include_react_tools():
     names = BOOK.tool_names
     spec = _openai_specs(names)
     fnames = [s["function"]["name"] for s in spec]
+    create_desc = next(
+        s["function"]["parameters"]["properties"]["tasks"]["description"]
+        for s in spec
+        if s["function"]["name"] == "create_plan"
+    ).lower()
+    assert "per needed work tool" in create_desc
+    assert "not per comma" in create_desc
+    assert "per asked workstream" not in create_desc
+    assert "one-item list is fine when that one tool" in create_desc
     assert "create_plan" in fnames
     assert "update_plan" in fnames
     assert "update_plan_status" in fnames
@@ -888,6 +916,21 @@ def test_query_units_payload_includes_roll_mtm_count(monkeypatch):
     assert occ["vacant_count"] == 13
 
 
+def test_create_plan_three_needed_tools_are_three_items():
+    reset_turn("tester")
+    create_plan(
+        "1. [in_progress] osm_geocode\n"
+        "2. [pending] query_units\n"
+        "3. [pending] compute_cap_rate"
+    )
+    assert [it["text"] for it in checklist()] == [
+        "osm_geocode",
+        "query_units",
+        "compute_cap_rate",
+    ]
+    assert len(checklist()) == 3
+
+
 def test_create_plan_keeps_headline_count_items_as_written():
     reset_turn("tester")
     create_plan(
@@ -926,10 +969,62 @@ def test_session_prompt_stuffs_prior_user_and_assistant_turns():
     assert "occupied only" in text
     assert "Answer the last User message" in text
     assert "first tool is always create_plan" in text.lower()
+    assert "per needed work tool" in text.lower()
+    assert "not per comma" in text.lower()
+    assert "per asked workstream" not in text.lower()
+    assert "one-item list is fine when that one tool" in text.lower()
+    assert "update_plan with the missing items" in text.lower()
+    assert "identity" in text.lower()
+    assert "chitchat" in text.lower()
+    assert "what's your name" not in text.lower()
+    assert "how are you" not in text.lower()
     assert "User: but this is the same as with 15 vacant" in text
     assert text.rfind("User: but this is the same as with 15 vacant") > text.rfind(
         "User: does in-place include vacant?"
     )
+
+
+def test_rent_roll_definition_prompt_does_not_always_plan_multi3():
+    from cre_rentroll.agents import system_prompt, _openai_specs
+    from cre_rentroll.scope import in_scope
+
+    q = "What's a rent roll?"
+    assert in_scope(q)
+    sys = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n").lower()
+    create_doc = " ".join((create_plan.__doc__ or "").lower().split())
+    create_desc = next(
+        s["function"]["parameters"]["properties"]["tasks"]["description"]
+        for s in _openai_specs(BOOK.tool_names)
+        if s["function"]["name"] == "create_plan"
+    ).lower()
+    history = []
+    for i in range(11):
+        history.append(
+            {
+                "role": "user",
+                "content": (
+                    "Put this property on a map, how many units are month-to-month, "
+                    f"and what cap rate is implied at a $12M ask? turn {i}"
+                ),
+            }
+        )
+        history.append(
+            {
+                "role": "assistant",
+                "content": f"Mapped, 48 MTM, implied cap 8.0%. prior {i}",
+            }
+        )
+    follow = session_prompt(q, history).lower()
+    for blob in (sys, create_doc, create_desc, follow):
+        assert "osm_geocode" in blob and "query_units" in blob and "compute_cap_rate" in blob
+        assert "only if this last message" in blob or "if this last message needs map" in blob
+        assert "never copy that three-item list" in blob
+        assert "map+mtm+cap needs osm_geocode" not in blob
+        assert "definition of a rent roll" in blob
+        assert "web_search" in blob
+    assert "do not re-run earlier" in follow
+    assert "what's a rent roll?" in follow
+    assert follow.rfind("user: what's a rent roll?") > follow.rfind("user: put this property")
 
 
 def test_session_prompt_keeps_current_user_when_history_is_huge():

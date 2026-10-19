@@ -515,7 +515,7 @@ export default function App() {
           {msgs.length === 0 && (
             <div className="empty">
               Attach a rent-roll spreadsheet, then ask about units, location, or income.
-              Everyday chat and weather are out of scope.
+              Everyday chat, greetings, and weather are out of scope.
             </div>
           )}
           {msgs.map((m, i) => (

@@ -3,11 +3,13 @@ import json
 from cre_rentroll.eval_service import (
     JUDGE_SYS,
     _judge_facts,
+    ask_is_conceptual,
     ci_aggregate,
     format_eval_log,
     gate,
     has_cre_payload,
     live_judge,
+    need_replan_hint,
     vault_calc_invented,
     vault_calc_log_label,
     vault_calc_ok,
@@ -60,12 +62,73 @@ def test_empty_draft_has_no_cre_payload_and_vault_not_ok():
     )
     assert not has_cre_payload("")
     assert not has_cre_payload("   ")
-    assert has_cre_payload('{"unit_count": 3, "occupancy_pct": 0.92}')
-    from cre_rentroll.scope import SEARCH_DOWN_TEXT
+    from cre_rentroll.scope import OOS_TEXT
 
-    assert has_cre_payload(SEARCH_DOWN_TEXT)
+    assert not has_cre_payload(OOS_TEXT)
+    assert has_cre_payload('{"unit_count": 3, "occupancy_pct": 0.92}')
+
+    assert has_cre_payload("Metro news is unavailable because search failed.")
     assert vault_calc_ok("", roll, []) is None
     assert vault_calc_ok("   ", roll, []) is None
+
+
+def test_definition_draft_with_citations_is_not_missing_cre_payload(monkeypatch):
+    q = "What's a rent roll?"
+    draft = (
+        "A rent roll is a schedule of tenants, rents, and lease terms for a "
+        "property, used to underwrite in-place income. [1] FACT#1"
+    )
+
+    def boom_scope(message, history=None):
+        raise AssertionError("score_gcr conceptual skip must not re-call scope classify")
+
+    monkeypatch.setattr("cre_rentroll.scope._scope_agent_token", boom_scope)
+    monkeypatch.setattr("cre_rentroll.scope.in_scope", lambda *a, **k: False)
+    monkeypatch.setattr("cre_rentroll.scope.classify_scope", lambda *a, **k: False)
+    assert ask_is_conceptual(q)
+    assert ask_is_conceptual("What\u2019s a rent roll?")
+    assert ask_is_conceptual("What is occupancy?")
+    assert ask_is_conceptual("What is NOI?")
+    assert has_cre_payload(draft, q)
+    _mock_openai(monkeypatch, '{"R":5,"G":5,"request_C":5}')
+    traces = [
+        {
+            "name": "web_search",
+            "result": {"hits": [{"title": "Rent roll", "url": "https://example.com"}]},
+        }
+    ]
+    scores = live_judge(q, draft, None, traces)
+    assert scores.judge == "llm"
+    assert scores.reason != "draft missing CRE payload"
+    assert scores.G == 5 and scores.request_C == 5
+    assert scores.vault_calc_ok is True
+    assert gate(scores, retry_used=False) == "show"
+    assert "draft missing CRE payload" not in format_eval_log(scores, "show")
+
+
+def test_occupancy_number_ask_requires_vault_payload(monkeypatch):
+    q = "What is occupancy on this rent roll?"
+    definition = "Occupancy is the share of units that are leased rather than vacant."
+    assert not ask_is_conceptual(q)
+    assert not has_cre_payload(definition, q)
+    called = {"n": 0}
+
+    class _Boom:
+        def __init__(self, **kwargs):
+            called["n"] += 1
+            raise AssertionError("should not judge a numeric occupancy draft with no vault figures")
+
+    import openai as openai_mod
+
+    monkeypatch.setattr("cre_rentroll.settings.openai_api_key", lambda: "sk-test")
+    monkeypatch.setattr(openai_mod, "OpenAI", _Boom)
+    scores = live_judge(q, definition, None, [])
+    assert called["n"] == 0
+    assert scores.judge == "empty"
+    assert scores.reason == "draft missing CRE payload"
+    assert scores.G is None and scores.vault_calc_ok is None
+    assert gate(scores, retry_used=False) == "error"
+    assert has_cre_payload("Occupancy is 92.07%.", q)
 
 
 def test_gate_empty_draft_is_error_no_retry():
@@ -182,6 +245,71 @@ def test_vault_calc_derived_not_in_allowlist_is_na_not_ok():
     assert "vault_calc=N/A" in line
     assert "mismatch" not in line
     assert "→ error" not in line
+
+
+def test_vault_calc_cap_rate_percent_vs_fraction_and_rounding():
+    class CapRoll(CanonicalRentRoll):
+        @property
+        def unit_count(self) -> int:
+            return 252
+
+        @property
+        def occupied_count(self) -> int:
+            return 247
+
+        @property
+        def vacant_count(self) -> int:
+            return 5
+
+        @property
+        def mtm_count(self) -> int:
+            return 5
+
+        @property
+        def occupancy_pct(self) -> float:
+            return 0.9802
+
+        @property
+        def in_place_monthly(self) -> float:
+            return 290851.0
+
+    roll = CapRoll(
+        layout="one_row",
+        units=[UnitRow(unit_id="1", in_place_rent=290851.0, vacant=False, mtm=True)],
+    )
+    traces = [
+        {
+            "name": "compute_cap_rate",
+            "result": {
+                "ask_price": 12_000_000,
+                "basis": 3_490_212.0,
+                "implied_cap": 0.290826,
+                "implied_on_income": True,
+            },
+        }
+    ]
+    draft = (
+        "The property, located at Barbers Hill Elementary School North, Perry Avenue, "
+        "Mont Belvieu, Chambers County, Texas, has 252 units, of which 5 are "
+        "month-to-month leases. The implied cap rate at a $12 million asking price "
+        "is approximately 29.08%."
+    )
+    assert vault_calc_ok(draft, roll, traces) is True
+    assert vault_calc_invented(draft, roll, traces) == []
+    assert vault_calc_ok("Implied cap 0.2908", roll, traces) is True
+    assert vault_calc_ok("Implied cap 29.1%.", roll, traces) is True
+    assert vault_calc_ok("Implied cap 29%.", roll, traces) is True
+    assert vault_calc_ok("Implied cap 8%.", roll, traces) is None
+    assert "8%" in vault_calc_invented("Implied cap 8%.", roll, traces)
+    eight = [
+        {
+            "name": "compute_cap_rate",
+            "result": {"ask_price": 12_000_000, "basis": 960_000.0, "implied_cap": 0.08},
+        }
+    ]
+    assert vault_calc_ok("Implied cap 8.0%.", roll, eight) is True
+    assert vault_calc_ok("Implied cap 0.080", roll, eight) is True
+    assert vault_calc_ok("Implied cap 29%.", roll, eight) is None
 
 
 def test_vault_calc_occupancy_percent_and_rounding():
@@ -302,6 +430,67 @@ def test_score_gcr_need_replan_log_includes_reason(monkeypatch):
     assert "mismatch" not in eval_line
 
 
+def test_score_gcr_cited_definition_skips_missing_payload(monkeypatch):
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import reset_turn, set_eval_query
+
+    q = "What's a rent roll?"
+    draft = (
+        "A rent roll is a property's schedule of tenants, rents, and lease terms, "
+        "used to underwrite in-place income. [1]"
+    )
+    monkeypatch.setattr("cre_rentroll.scope.in_scope", lambda *a, **k: False)
+    monkeypatch.setattr(
+        "cre_rentroll.scope._scope_agent_token",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no scope hop in score_gcr")),
+    )
+    _mock_openai(monkeypatch, '{"R":5,"G":5,"request_C":5,"reason":"cited definition"}')
+    reset_turn("tester")
+    set_eval_query(q)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    out = json.loads(score_gcr(draft))
+    assert out["judge"] == "llm"
+    assert out["decision"] == "ok"
+    assert out.get("reason") != "draft missing CRE payload"
+    assert "compute_income" not in (out.get("hint") or "").lower()
+
+
+def test_definition_need_replan_does_not_add_vault_calculators(monkeypatch):
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import reset_turn, set_eval_query
+
+    q = "What's a rent roll?"
+    hint = need_replan_hint(q)
+    assert "vault calculators" in hint.lower()
+    assert "web_search" in hint.lower()
+    assert "compute_noi" in hint
+    assert "those work tools" not in hint
+    income_hint = need_replan_hint(
+        "What is in-place monthly income, and what would annualized NOI be if opex is 35% of EGI?"
+    )
+    assert "those work tools" in income_hint
+    assert "vault calculators" not in income_hint.lower()
+
+    why = "user wanted a definition not location/occupancy/cap"
+    reset_turn("tester")
+    set_eval_query(q)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=5, G=1, request_C=5, vault_calc_ok=None, judge="llm", reason=why
+        ),
+    )
+    out = json.loads(
+        score_gcr("Occupancy is 92% and implied cap is 8% at a $12M ask.")
+    )
+    assert out["decision"] == "need_replan"
+    assert "vault calculators" in (out.get("hint") or "").lower()
+    assert "web_search" in (out.get("hint") or "").lower()
+    assert "those work tools" not in (out.get("hint") or "")
+    assert why in (out.get("reason") or "")
+
+
 def test_score_gcr_logs_invented_draft_numbers(monkeypatch):
     from cre_rentroll.run_events import bind, reset
     from cre_rentroll.tools import score_gcr
@@ -368,6 +557,11 @@ def test_memory_write_if_empty():
 def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert "0.9207" in JUDGE_SYS
     assert "92.07%" in JUDGE_SYS
+    assert "0.2908" in JUDGE_SYS
+    assert "29.08%" in JUDGE_SYS
+    assert "0.080" in JUDGE_SYS
+    assert "8.0%" in JUDGE_SYS
+    assert "8% vs 29%" in JUDGE_SYS
     assert "vacant-only" in JUDGE_SYS.lower() or "vacant only" in JUDGE_SYS.lower()
     assert "100% occupancy" in JUDGE_SYS.lower()
     assert "same as with vacancy" in JUDGE_SYS.lower()
@@ -377,6 +571,12 @@ def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert '"reason"' in JUDGE_SYS
     assert "interview" in JUDGE_SYS.lower()
     assert "gold.json" in JUDGE_SYS
+    assert "identity" in JUDGE_SYS.lower()
+    assert "rent-roll-only refuse" in JUDGE_SYS.lower()
+    assert "conceptual" in JUDGE_SYS.lower()
+    assert "what is a rent roll" in JUDGE_SYS.lower()
+    assert "what's your name" not in JUDGE_SYS.lower()
+    assert "who are you" not in JUDGE_SYS.lower()
 
 
 def test_judge_facts_include_percent_display(monkeypatch):
@@ -395,6 +595,11 @@ def test_judge_facts_include_percent_display(monkeypatch):
     facts = _judge_facts(roll, traces)
     assert facts["roll_abstract"]["occupancy_pct_display"] == "92.07%"
     assert facts["tools"][0]["result"].get("units") is None
+    cap_facts = _judge_facts(
+        roll,
+        [{"name": "compute_cap_rate", "result": {"ask_price": 12_000_000, "implied_cap": 0.290826}}],
+    )
+    assert cap_facts["tools"][0]["result"]["implied_cap_pct"] == 29.08
 
 
 def _mock_openai(monkeypatch, payload: str | Exception):

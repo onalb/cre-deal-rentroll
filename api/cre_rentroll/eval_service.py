@@ -33,23 +33,40 @@ def _numbers(text: str) -> set[str]:
     return out
 
 
-def _num_close(v: float, a: float) -> bool:
-    """Same figure after rounding, or occupancy-style 0.9207 vs 92.07%."""
-    if abs(v - a) < 0.51:
+def _same_magnitude(x: float, y: float) -> bool:
+    """Near-equal after 2-decimal / whole-percent rounding — not 8 vs 29."""
+    if abs(x - y) / max(abs(x), abs(y), 1e-9) < 1e-3:
         return True
-    scale = max(abs(v), abs(a), 1e-9)
-    if abs(v - a) / scale < 1e-3:
+    if abs(round(x, 2) - round(y, 2)) < 1e-9:
+        return True
+    # Whole displayed percent (29.08 vs 29) once both are on the percent scale.
+    if min(abs(x), abs(y)) >= 1.0 and abs(x - y) < 0.51:
+        return True
+    if max(abs(x), abs(y)) <= 1.0000001 and abs(x * 100.0 - y * 100.0) < 0.51:
+        return True
+    return False
+
+
+def _num_close(v: float, a: float) -> bool:
+    """Same figure after rounding, or rate-style 0.2908 vs 29.08% (not 8% vs 29%)."""
+    if _same_magnitude(v, a):
         return True
     lo, hi = (v, a) if abs(v) <= abs(a) else (a, v)
-    if 0 < lo <= 1.0 and 1.0 < hi <= 100.5:
-        scaled = lo * 100.0
-        if abs(scaled - hi) < 0.51:
-            return True
-        if abs(scaled - hi) / max(abs(scaled), abs(hi), 1e-9) < 1e-3:
-            return True
-        if abs(round(scaled, 2) - round(hi, 2)) < 1e-9:
-            return True
+    if 0 < lo <= 1.0 and hi > 1.0:
+        return _same_magnitude(lo * 100.0, hi)
     return False
+
+
+def _with_percent_twins(allowed: set[str]) -> set[str]:
+    extra: set[str] = set()
+    for a in allowed:
+        try:
+            v = float(a)
+        except ValueError:
+            continue
+        if 0 < v <= 1.0000001:
+            extra |= _numbers(str(v * 100.0))
+    return allowed | extra
 
 
 def this_turn_calc_spans(traces: list[dict[str, Any]]) -> list[str]:
@@ -61,9 +78,10 @@ def this_turn_calc_spans(traces: list[dict[str, Any]]) -> list[str]:
     return spans
 
 
+# Vault / tool JSON keys and search-down copy — not concept words like occupancy/NOI.
 _CRE_HINTS = (
     "unit_count",
-    "occupancy",
+    "occupancy_pct",
     "in_place",
     "in-place",
     "vacant_count",
@@ -74,19 +92,75 @@ _CRE_HINTS = (
     '"lat"',
     '"lon"',
     '"noi"',
-    " noi",
     "noi_",
-    "cap rate",
-    "multifamily",
     "unavailable",
+)
+# Definitional CRE (what is a rent roll) vs this-deal figures (occupancy %, income).
+_DEFINITIONAL = re.compile(
+    r"(?i)\b(?:what(?:'s| is| are)\s+(?:a |an |the )?|define|explain|"
+    r"meaning of|definition of)\b"
+)
+_DEAL_FIGURE = re.compile(
+    r"(?i)\b("
+    r"how many|percent|\bpct\b|%|on this|this (?:rent[\s-]*roll|property|deal|asset)|"
+    r"in[\s-]*place|monthly income|abstract this|compute|calculat|"
+    r"vacant count|unit count|occupied count|implied cap|asking price|"
+    r"geocode|on a map|where is this"
+    r")\b"
 )
 
 
-def has_cre_payload(draft: str) -> bool:
-    """True when the draft has CRE JSON/prose to judge — empty is not a payload."""
+def ask_is_conceptual(query: str) -> bool:
+    """True when the last user ask is a CRE definition, not this deal's figures.
+
+    Scope (IN_SCOPE vs OOS) is classify_scope on the run_task hop. Do not call
+    in_scope here — a second fail-closed LLM hop inside score_gcr made cited
+    definitions look like missing vault payload. VAULT HAS is facts, not the ask.
+    """
+    text = (query or "").replace("\u2019", "'").replace("\u2018", "'").strip()
+    if not text:
+        return False
+    if _DEAL_FIGURE.search(text):
+        return False
+    return bool(_DEFINITIONAL.search(text))
+
+
+def need_replan_hint(query: str, *, vault_label: str | None = None) -> str:
+    """score_gcr / reflection hint. Definitions must not grow vault calculator lists."""
+    if ask_is_conceptual(query):
+        hint = (
+            "need_replan — last User message is a CRE definition, not this deal's "
+            "location/occupancy/income/NOI/cap. Do not add vault calculators "
+            "(query_units, compute_income, compute_noi, compute_cap_rate) or osm_geocode "
+            "unless THIS message asked. Rewrite a cited definition (web_search if needed), "
+            "then score_gcr again"
+        )
+    else:
+        hint = (
+            "need_replan — call update_plan with NEW remaining work (not create_plan; "
+            "completed rows are kept), then those work tools, then score_gcr again"
+        )
+    extra = (vault_label or "").strip()
+    if extra:
+        hint = f"{hint}; {extra}"
+    return hint
+
+
+def has_cre_payload(draft: str, query: str = "") -> bool:
+    """True when the draft has CRE JSON/prose to judge — empty is not a payload.
+
+    Conceptual CRE asks (what is a rent roll) need an explanation, not occupancy %
+    or income. Numeric-deal asks still need vault JSON keys or cited numbers.
+    """
+    from cre_rentroll.scope import is_refuse_draft
+
     text = (draft or "").strip()
     if not text:
         return False
+    if is_refuse_draft(text):
+        return False
+    if ask_is_conceptual(query):
+        return len(text) >= 12
     low = text.lower()
     if any(h in low for h in _CRE_HINTS):
         return True
@@ -142,7 +216,7 @@ def _allowed_numbers(roll: CanonicalRentRoll | None, traces: list[dict[str, Any]
         elif name == "osm_geocode":
             for key in _GEO_HEADLINE:
                 _add_num(allowed, result.get(key))
-    return allowed
+    return _with_percent_twins(allowed)
 
 
 def _date_spans(text: str) -> list[tuple[int, int]]:
@@ -346,15 +420,19 @@ def vault_calc_ok(
 
 JUDGE_SYS = """You are a CRE rent-roll eval judge. Score integers 1-5. Return JSON only: {"R":n,"G":n,"request_C":n,"reason":"short why"}
 
-R (relevance): Is the answer on-topic for this user question? High if it addresses the CRE ask. Low (1-2) if off-topic (weather, sports, small talk) or out of scope chatter.
+R (relevance): Is the answer on-topic for this user question? High if it addresses the CRE ask. High if the user asked identity, greetings, weather, sports, recipes, or other non-deal chat and the answer is the rent-roll-only refuse. Low (1-2) if a CRE ask gets off-topic chatter, or if a non-deal ask gets a CRE/tool answer instead of the refuse.
 
 G (groundedness): Are numeric and factual claims supported by VAULT / tools / FACT# / RollAbstract numbers, or by arithmetic from those plus rents the USER stated in QUERY?
-- Occupancy fraction vs percent is the SAME figure: occupancy_pct 0.9207 and 92.07% are both grounded. Do not lower G for converting 0.9207 ↔ 92.07% or rounding a displayed percent.
+- Identity, greetings, weather, or other non-deal chat: the rent-roll-only refuse is grounded. Do not low-G it for omitting vault numbers.
+- Conceptual / definitional CRE (what is a rent roll, occupancy, NOI): an on-topic explanation grounded in search hits / FACT# / tools is grounded. Do not low-G for omitting occupancy %, income, unit counts, or other vault numbers when the user did not ask for this deal's figures.
+- Rate fraction vs percent is the SAME figure: occupancy_pct 0.9207 and 92.07%, implied_cap 0.2908 and 29.08% (also 29.1% or 29%) are both grounded. Do not lower G for converting 0.080 ↔ 8.0%, 0.9207 ↔ 92.07%, or rounding a displayed percent. Distinct rates (8% vs 29%) are not the same figure.
 - If the user asked only for vacant count (vacant-only), do not lower G for omitting occupancy, income, NOI, or unit mix.
 - User-stated scenario rents (e.g. vacant units at $5,000/month) are grounded in QUERY. vacant_count × that rent × 12, and in_place_annual + that fill, are grounded. Do not low-G a full-occupancy total for including occupied in-place.
 - Invented numbers not in vault, tool JSON, FACT#, RollAbstract, QUERY, or that arithmetic → low G.
 
 C (request completeness — not gold.json): Did the answer cover what was asked this turn?
+- Identity, greetings, weather, or other non-deal chat: the rent-roll-only refuse is complete. Do not low-C it for omitting a name or a weather forecast.
+- Conceptual / definitional CRE: a correct cited explanation is complete. Do not require vault occupancy/income/unit figures on those asks.
 - Vacant-only questions do NOT require occupancy %, income, geocode, or NOI.
 - Occupied-only in-place monthly is not 100% occupancy / all-units-occupied / no-vacant income. Repeating in_place_monthly when the user asked for full occupancy (or said the dollar figure is the same as with vacancy) is low C. Occupancy counts are not a substitute for that income estimate.
 - If the user asked income if ALL units are occupied and gave a fill rent for vacant units, the complete figure is occupied in-place plus vacant fill (annualize if they asked annual). Do not fail C for reporting that total. Do not treat vacant-fill-only ($780k) as the whole ask unless they asked only for the vacant increment.
@@ -379,6 +457,16 @@ def _compact_tool_result(name: str, result: Any) -> Any:
         slim = {k: v for k, v in result.items() if k != "units"}
         units = result.get("units") or []
         slim["unit_rows"] = len(units) if isinstance(units, list) else 0
+        return slim
+    if name == "compute_cap_rate":
+        slim = dict(result)
+        cap = slim.get("implied_cap")
+        try:
+            cv = float(cap)
+        except (TypeError, ValueError):
+            cv = None
+        if cv is not None and 0 < cv <= 1.0000001:
+            slim["implied_cap_pct"] = round(cv * 100.0, 2)
         return slim
     return result
 
@@ -468,8 +556,9 @@ def live_judge(query: str, answer: str, roll: CanonicalRentRoll | None, traces: 
     """
     from cre_rentroll.settings import openai_api_key
 
-    if not has_cre_payload(answer):
-        # No CRE to judge — G/C/R stay N/A; vault_calc was not run.
+    if not has_cre_payload(answer, query):
+        # Numeric-deal draft with no vault figures — G/C/R stay N/A; vault_calc was not run.
+        # Conceptual CRE explanations are a payload even with no occupancy/income numbers.
         return EvalScores(judge="empty", reason="draft missing CRE payload")
     ok = vault_calc_ok(answer, roll, traces)
     if not openai_api_key():

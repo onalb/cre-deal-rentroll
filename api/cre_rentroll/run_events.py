@@ -247,8 +247,11 @@ def llm_summary_bit() -> tuple[str, int]:
 
 
 def _confidence_line(scores: Any, reason: str) -> str:
+    why = (reason or "").lower()
+    if "out of scope" in why or "irrelevant" in why:
+        return "n/a (out of scope)"
     if scores is None:
-        if "scope" in (reason or "") or "IRRELEVANT" in (reason or "") or "out of scope" in (reason or ""):
+        if "scope" in why:
             return "n/a (out of scope)"
         return "n/a"
     judge = getattr(scores, "judge", None)
