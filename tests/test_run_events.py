@@ -492,6 +492,8 @@ def test_harness_judge_failure_is_eval_error(monkeypatch):
     assert outcome.eval is not None
     assert outcome.eval.judge == "error"
     assert outcome.eval.G is None and outcome.eval.R is None and outcome.eval.request_C is None
+    assert "92.07" not in (outcome.text or "")
+    assert "could not finish that answer this turn" in (outcome.text or "").lower()
     eval_msgs = [row["message"] for row in seen if row["step"] == "eval"]
     assert any("judge=error" in m for m in eval_msgs)
     assert not any("(LLM)" in m for m in eval_msgs)

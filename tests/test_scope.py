@@ -13,6 +13,8 @@ _OOS_TOKENS = {
     "who are you": "OOS",
 }
 _IN_TOKENS = {
+    "what's the population in West Las Vegas": "IN_SCOPE",
+    "what the flood risk in that area?": "IN_SCOPE",
     "What's a rent roll?": "IN_SCOPE",
     "What is occupancy?": "IN_SCOPE",
     "What is occupancy and in-place income?": "IN_SCOPE",
@@ -34,24 +36,20 @@ def _inject_token(monkeypatch, token: str):
     )
 
 
-def test_classify_prompt_says_rent_roll_definition_is_in_scope():
+def test_classify_prompt_is_generic_property_deal_area_vs_personal_chat():
     blob = scope_mod._SCOPE_SYS.lower()
     assert "in_scope" in blob
-    assert "rent-roll definitions" in blob or "rent roll" in blob
-    assert "what is a rent roll" in blob
-    assert "what's a rent roll" in blob
-    assert "empty" in blob and "memory" in blob
-    assert "no uploaded rent roll" in blob
-    assert "occupancy" in blob
-    assert "street" in blob
-    assert "coordinates" in blob
-    assert "map" in blob
-    assert "cap" in blob
-    assert "multi-chip" in blob
-    assert "weather" in blob
-    assert "how-are-you" in blob
-    assert "greetings" in blob
+    assert "property" in blob
+    assert "deal" in blob
+    assert "area" in blob or "market" in blob
+    assert "personal" in blob or "idle" in blob
+    assert "how are you" in blob
+    assert "web_search" in blob
+    assert "no tools" in blob
     assert "oos only" in blob
+    assert "flood" not in blob
+    assert "population" not in blob
+    assert "las vegas" not in blob
     assert not hasattr(scope_mod, "_CRE")
 
 
@@ -188,8 +186,8 @@ def test_run_task_need_file_vault_gate_no_extra_llm(monkeypatch):
 
 def test_run_task_oos_keeps_llm_wording(monkeypatch):
     draft = (
-        "I only answer questions about an uploaded rent roll — units, occupancy, "
-        "income, location, or underwriting. This app will not forecast weekend weather."
+        "This agent answers questions about the property, the deal, or the area it "
+        "sits in — not personal chat. This app will not forecast weekend weather."
     )
     out, captured, seen = _run_oos_task(
         monkeypatch, "What's the weather this weekend?", draft
@@ -239,12 +237,27 @@ def test_system_prompt_identity_chitchat_is_oos_not_interview_wording():
         assert "chitchat" in blob
         assert "answer without tools" in blob
         assert "no create_plan" in blob
-        assert "i only answer questions about an uploaded rent roll" in blob
+        assert "property" in blob and "deal" in blob and "area" in blob
+        assert "personal chat" in blob
+        assert "flood" not in blob
+        assert "population" not in blob
         assert "what's your name" not in blob
         assert "who are you" not in blob
         assert "i am cre" not in blob
     assert "never emit" in has and "out-of-scope refuse" in has
     assert "units, occupancy, income" in has or "occupancy" in has
+    assert "average property value" in empty
+    assert "web_search" in empty
+    assert "never" in empty and "need-file" in empty
+    assert "please attach a rent-roll csv" in empty
+    # NEED_FILE_TEXT is occupancy/this-roll only — not the instruction for area value.
+    need = empty.find("please attach a rent-roll csv")
+    area = empty.find("average property value")
+    assert need != -1 and area != -1
+    after_area = empty[area : area + 400]
+    assert "never" in after_area and "need-file" in after_area
+    assert "web_search" in after_area
+    assert "please attach a rent-roll csv" not in after_area
 
 
 def _assert_oos_no_tools(out, captured, seen, text: str):

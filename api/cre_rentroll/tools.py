@@ -584,7 +584,9 @@ def create_plan(tasks: str) -> str:
     work tool — not per comma in the user sentence. A one-item checklist is fine
     when that one tool answers the whole last message (this-deal occupancy only →
     query_units; map-only → osm_geocode; vacant-only → query_units; definition of
-    a rent roll → web_search; one web_search). Only if THIS last message asks for
+    a rent roll → web_search; average property value in that area / metro / comps /
+    area/market facts → web_search; zip/city in the message is enough; in that
+    area uses last geocode/address_hint; one web_search). Only if THIS last message asks for
     map AND month-to-month AND cap: list osm_geocode, query_units, and
     compute_cap_rate as three items. Never copy that three-item list onto a
     definition or occupancy-only ask. Locate/map with no other CRE ask is one
@@ -592,8 +594,9 @@ def create_plan(tasks: str) -> str:
     osm_geocode / compute_cap_rate / compute_noi unless THIS last message asked.
     Tag the current step [in_progress], the rest [pending].
 
-    WHEN NOT: Weather, sports, recipes, identity, greetings, the agent's name,
-    chitchat, or other non-deal chat — do not call this tool.
+    WHEN NOT: Talking to the agent as a person or idle chat (identity, greetings,
+    the agent's name, chitchat) — do not call this tool. Idle weekend weather is
+    OOS; facts about the property's area or market stay in scope.
     Do not skip because the ask is a single web_search or vault call.
     Do not call again — mark statuses with update_plan_status; rewrite the list
     with update_plan (never a second create_plan).
@@ -871,6 +874,8 @@ def reflection(analysis: str, need_replan: bool = False) -> str:
        query_units vs compute_income — once, not until turn 12. Vacant-only does not require compute_income.
        Occupancy/income (this deal) → compute_income. Definition asks: do not add
        vault calculators; rewrite a cited definition (web_search if needed).
+       Area/metro/comps: do not add vault calculators and do not rewrite a rent-roll
+       definition; cite listings / a stated average (web_search if needed).
        Do not always call compute_income. After a vault tool, call
        update_plan_status with that step [completed] and the next
        [in_progress], then continue. When the checklist is done, draft the
@@ -896,10 +901,15 @@ def reflection(analysis: str, need_replan: bool = False) -> str:
                 "score_gcr that sentence. Mention cap rates / comps / metro news only "
                 "if the user asked for those. Do not copy this tool result to the user."
             )
-        from cre_rentroll.eval_service import ask_is_conceptual, need_replan_hint
+        from cre_rentroll.eval_service import (
+            ask_is_conceptual,
+            ask_is_market_area,
+            need_replan_hint,
+        )
 
-        if ask_is_conceptual(turn_ctx.eval_query() or ""):
-            return need_replan_hint(turn_ctx.eval_query() or "")
+        q = turn_ctx.eval_query() or ""
+        if ask_is_conceptual(q) or ask_is_market_area(q):
+            return need_replan_hint(q)
         return (
             "Need replan: call update_plan with the NEW remaining work. "
             "Completed/incomplete rows stay on the list. Do not call create_plan again. "
@@ -1165,8 +1175,13 @@ def osm_geocode(query: str) -> str:
 def web_search(query: str, max_results: int = 5) -> str:
     """Search the public web (ddgs) for current articles.
 
-    When: Q2 only if geo_confidence is low; Q3 multifamily cap-rate / sale news
-    for THIS property's city/metro.
+    When: average property value in that area / metro / comps; area/market
+    facts (demographics, hazards, comps). 'In that area' uses last
+    geocode/address_hint; zip/city in the message is enough. Q2 if
+    geo_confidence is low; Q3 multifamily cap-rate / sale news for THIS
+    property's city/metro (FACT# / address_hint / last geocode — never invent
+    a metro). One-item create_plan is enough. Never
+    require a spreadsheet for that ask. Python does not write a canned figure.
     What: query string; max_results default 5.
     How: returns title/href/snippet JSON. On failure return error JSON so the
     harness can reflect and replan (do not loop).
@@ -1219,9 +1234,12 @@ def score_gcr(draft: str) -> str:
     show. Forbidden to stop with a sentence and no score_gcr. If min(G, request_C) <= 2,
     need_replan, then score_gcr again. Do not add vault calculators when the ask is a
     CRE definition and the draft was off-topic deal numbers — rewrite a cited
-    definition (web_search if needed). vault_calc N/A (a cited
+    definition (web_search if needed). Area/market facts (demographics, hazards,
+    comps) are in-scope CRE: do not rewrite a rent-roll definition or score as
+    off-topic rent-roll; citations/search hits are the payload. Do not require
+    occupancy numbers. vault_calc N/A (a cited
     number not in the vault allowlist, including derived math) is not a fail. Conceptual
-    CRE definitions do not need occupancy/income/unit figures. Do not return to the user
+    CRE definitions and area/market drafts do not need occupancy/income/unit figures. Do not return to the user
     until G/C are ok or you hit the turn limit. Do not require RollAbstract JSON.
 
     WHEN NOT: Not after every MCP hit. Not a substitute for query_units / compute_*.

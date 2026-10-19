@@ -652,15 +652,22 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "buy" in has and "worth" in has
     assert "in-scope underwriting" in has
     assert "never emit" in has and "out-of-scope refuse" in has
-    assert "i only answer questions about an uploaded rent roll" in has
+    assert "answers questions about the property, the deal, or the area it sits in" in has
+    assert "personal chat" in has
     assert "[incomplete]" in has
     assert "do not refuse" in has
     assert "never copy (skill)" in has
-    assert "weather, sports, recipes" in has
+    assert "idle weekend weather" in has
+    assert "flood" not in has
+    assert "population" not in has
     empty = system_prompt(BOOK, "VAULT EMPTY: no rent roll is ingested.\n").lower()
     assert "please attach a rent-roll csv" in empty
     assert "identity" in empty
     assert "out-of-scope refuse" in empty or "need-file" in empty
+    assert "average property value" in empty
+    assert "never that need-file sentence" in empty or (
+        "never" in empty and "need-file" in empty and "web_search" in empty
+    )
     assert "do not require rollabstract json" in sys
     assert "need_replan until turn 12" in sys
     create_doc = " ".join((create_plan.__doc__ or "").lower().split())
@@ -1025,6 +1032,60 @@ def test_rent_roll_definition_prompt_does_not_always_plan_multi3():
     assert "do not re-run earlier" in follow
     assert "what's a rent roll?" in follow
     assert follow.rfind("user: what's a rent roll?") > follow.rfind("user: put this property")
+
+
+def test_area_property_value_prompt_is_web_search_not_need_file(monkeypatch):
+    from cre_rentroll.agents import _openai_specs, system_prompt
+    from cre_rentroll.harness import _facts_for_agent
+    from cre_rentroll.scope import NEED_FILE_TEXT
+    from cre_rentroll.tools import create_plan as create_plan_fn
+
+    q = "What's the average property value in that area?"
+    empty = system_prompt(BOOK, "VAULT EMPTY: no rent roll is ingested.\n")
+    has = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n")
+    follow = session_prompt(
+        q,
+        [
+            {"role": "user", "content": "Where is this property? Can you put it on a map?"},
+            {
+                "role": "assistant",
+                "content": "12630 Ashford Point Drive, Alief, Houston, TX",
+            },
+        ],
+    )
+    create_doc = " ".join((create_plan_fn.__doc__ or "").split())
+    create_desc = next(
+        s["function"]["parameters"]["properties"]["tasks"]["description"]
+        for s in _openai_specs(BOOK.tool_names)
+        if s["function"]["name"] == "create_plan"
+    )
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    facts = _facts_for_agent("tester", False)
+
+    for blob in (empty, has, follow, create_doc, create_desc, facts):
+        low = blob.lower()
+        assert "web_search" in low
+        assert "average property value" in low
+        assert "metro" in low or "comps" in low or "that area" in low
+
+    assert NEED_FILE_TEXT not in follow
+    assert NEED_FILE_TEXT not in has
+    assert NEED_FILE_TEXT in empty
+    assert "never that need-file sentence" in empty.lower()
+    assert "do not call query_units, compute_*, osm_geocode, or web_search" not in facts.lower()
+    assert "never the need-file sentence" in facts.lower()
+    # Map-then-value: last street is already in the session user prompt.
+    assert "12630 ashford point drive" in follow.lower()
+    assert "where is this property" in follow.lower()
+    skill = empty.lower()
+    assert "not buy-this-roll" in skill or "is not buy-this-roll" in skill
+    assert "compute_income" in skill
+    # Area-value block must not instruct NEED_FILE_TEXT as the reply.
+    idx = empty.lower().find("average property value")
+    assert idx != -1
+    area_block = empty[idx : idx + 500].lower()
+    assert "web_search" in area_block
+    assert NEED_FILE_TEXT.lower() not in area_block
 
 
 def test_session_prompt_keeps_current_user_when_history_is_huge():

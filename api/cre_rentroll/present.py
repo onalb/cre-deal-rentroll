@@ -188,14 +188,21 @@ def strip_operator_echo(draft: str) -> str:
 
 
 def last_scored_prose(traces: list | None) -> str:
-    """Last score_gcr draft that is a user sentence, not Need replan / checklist / eval JSON."""
+    """Last score_gcr draft that scored ok. Failed eval drafts are not user-facing."""
     for row in reversed(traces or []):
         if str((row or {}).get("name") or "") != "score_gcr":
             continue
+        result = (row or {}).get("result") or {}
+        decision = ""
+        if isinstance(result, dict):
+            decision = str(result.get("decision") or "")
+        if decision != "ok":
+            return ""
         args = (row or {}).get("args") or {}
         text = strip_operator_echo(answer_prose(str(args.get("draft") or "")))
         if text and not is_operator_leak(text):
             return text
+        return ""
     return ""
 
 

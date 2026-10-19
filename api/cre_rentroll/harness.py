@@ -69,14 +69,18 @@ _SESSION_FOLLOW = (
     "Do not ignore the last message to re-dump an earlier occupancy or count answer. "
     "Do not re-run earlier map / MTM / income / NOI / cap tools just because those "
     "asks sit in session memory. Plan only the work THIS last message needs. "
-    "If that last message is identity, greetings, the agent's name, chitchat, "
-    "weather, sports, recipes, or other non-deal chat: no tools and no score_gcr; "
-    "use the system-prompt refuse sentence. In-scope CRE (units, occupancy, map, "
-    "street, coordinates, income, underwriting, rent-roll definitions): first tool is always create_plan. "
+    "If that last message is talking to the agent as a person or idle chat "
+    "(identity, greetings, the agent's name, chitchat): no tools "
+    "and no score_gcr; use the system-prompt refuse sentence. "
+    "Idle weekend weather is OOS; facts about the property's area or market stay in scope. "
+    "In-scope (this property, the rent roll, the deal, or the area/market it sits in): "
+    "first tool is always create_plan. "
     "One numbered line per needed work tool — not per comma in the user sentence. "
     "A one-item list is fine when that one tool answers the whole last message "
     "(this-deal occupancy only → query_units; map-only → osm_geocode; definition of "
-    "a rent roll → web_search; one web_search). "
+    "a rent roll → web_search; average property value in that area / metro / comps / "
+    "area/market facts → web_search; zip/city in the message is enough; in that area "
+    "uses last geocode/address_hint; one web_search). "
     "Only if THIS last message asks for map AND month-to-month AND cap: list "
     "osm_geocode, query_units, and compute_cap_rate. Never copy that three-item list "
     "onto a definition, occupancy-only, or other ask. Never osm_geocode / "
@@ -424,6 +428,11 @@ def _eval_and_stop(
     if decision == "error":
         stop = "eval_error"
         kind = "error"
+        # Never show a G/C/R fail, judge error, or unrecovered need_replan as the bubble.
+        show = (
+            "I could not finish that answer this turn. "
+            "Please send the question again."
+        )
     elif decision == "warn":
         kind = "warning"
         stop = "eval_warn"
@@ -542,9 +551,15 @@ def _facts_for_agent(username: str, has_vault: bool) -> str:
         )
     return (
         "VAULT EMPTY: no rent roll is ingested for this session. "
-        "If the ask is CRE (including locate/map/where is this property), reply with "
-        "the need-file sentence from the system prompt and do not call query_units, "
-        "compute_*, osm_geocode, or web_search.\n" + facts
+        "Occupancy / income / units on THIS roll still use the need-file sentence "
+        "when this session has no street yet — do not call query_units / compute_*. "
+        "Average property value in that area / metro / comps / area/market facts "
+        "(demographics, hazards, comps): web_search using the "
+        "last map/geocode/address_hint or a street already in this session, or a "
+        "zip/city in the message; never the need-file sentence. "
+        "'In that area' uses last geocode/address_hint. Python does not write a canned "
+        "area/market figure. Locate / map with a street already in session: "
+        "osm_geocode, do not ask for a spreadsheet.\n" + facts
     )
 
 

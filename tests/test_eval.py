@@ -4,6 +4,9 @@ from cre_rentroll.eval_service import (
     JUDGE_SYS,
     _judge_facts,
     ask_is_conceptual,
+    ask_is_market_area,
+    ask_is_market_comps,
+    ask_skips_vault_payload,
     ci_aggregate,
     format_eval_log,
     gate,
@@ -129,6 +132,147 @@ def test_occupancy_number_ask_requires_vault_payload(monkeypatch):
     assert scores.G is None and scores.vault_calc_ok is None
     assert gate(scores, retry_used=False) == "error"
     assert has_cre_payload("Occupancy is 92.07%.", q)
+
+
+def test_comps_listing_draft_is_on_topic_not_missing_payload(monkeypatch):
+    q = "What's the average property value in that area?"
+    draft = (
+        "Recent listings in that metro average about $185,000. "
+        "See https://www.zillow.com/homedetails/example and "
+        "https://www.redfin.com/example. [1]"
+    )
+    assert ask_is_market_comps(q)
+    assert not ask_is_conceptual(q)
+    assert has_cre_payload(draft, q)
+    hint = need_replan_hint(q)
+    assert "rent-roll definition" in hint.lower()
+    assert "do not" in hint.lower()
+    assert "those work tools" not in hint
+    _mock_openai(
+        monkeypatch,
+        '{"R":5,"G":5,"request_C":5,"reason":"cited comps and listing links"}',
+    )
+    traces = [
+        {
+            "name": "web_search",
+            "result": {
+                "hits": [
+                    {
+                        "title": "Area listings",
+                        "url": "https://www.zillow.com/homedetails/example",
+                    }
+                ]
+            },
+        }
+    ]
+    scores = live_judge(q, draft, None, traces)
+    assert scores.judge == "llm"
+    assert scores.reason != "draft missing CRE payload"
+    assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
+    assert gate(scores, retry_used=False) == "show"
+    assert "off-topic" not in (scores.reason or "").lower()
+    assert "draft missing CRE payload" not in format_eval_log(scores, "show")
+
+
+def test_area_demographics_draft_is_on_topic_not_missing_payload(monkeypatch):
+    draft = (
+        "Census estimates about 58,400 residents in that zip. "
+        "See https://www.census.gov/example [1]"
+    )
+    traces = [
+        {
+            "name": "web_search",
+            "result": {
+                "hits": [
+                    {
+                        "title": "Area profile",
+                        "url": "https://www.census.gov/example",
+                    }
+                ]
+            },
+        }
+    ]
+    asks = (
+        "What's the population in that area?",
+        "populatin in that area",
+        "zip 77082",
+        "Houston",
+    )
+    for q in asks:
+        assert ask_is_market_area(q)
+        assert ask_skips_vault_payload(q)
+        assert not ask_is_conceptual(q)
+        assert has_cre_payload(draft, q)
+    assert not ask_is_market_area("How are you today")
+    assert not ask_skips_vault_payload("How are you today")
+    q = asks[0]
+    hint = need_replan_hint(q)
+    assert "occupancy" in hint.lower()
+    assert "rent-roll definition" in hint.lower()
+    assert "those work tools" not in hint
+    _mock_openai(
+        monkeypatch,
+        '{"R":5,"G":5,"request_C":5,"reason":"cited area/market figure from search"}',
+    )
+    scores = live_judge(q, draft, None, traces)
+    assert scores.judge == "llm"
+    assert scores.reason != "draft missing CRE payload"
+    assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
+    assert gate(scores, retry_used=False) == "show"
+    assert "off-topic" not in (scores.reason or "").lower()
+    assert "not a rent-roll question" not in (scores.reason or "").lower()
+    assert "draft missing CRE payload" not in format_eval_log(scores, "show")
+
+
+def test_failed_eval_does_not_return_comps_draft(monkeypatch):
+    from cre_rentroll.harness import run_task
+    from cre_rentroll.run_events import bind, reset
+    from cre_rentroll.tools import score_gcr
+
+    comps = (
+        "Recent listings in that metro average about $185,000. "
+        "See https://www.zillow.com/homedetails/example"
+    )
+
+    def fake_agent(*_a, **_k):
+        score_gcr(comps)
+        return comps
+
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=1,
+            G=1,
+            request_C=1,
+            vault_calc_ok=None,
+            judge="llm",
+            reason="off-topic as it does not address the CRE rent-roll question",
+        ),
+    )
+    token = bind(lambda *_a, **_k: None)
+    try:
+        outcome = run_task(
+            "tester",
+            "What's the average property value in that area?",
+            skip_scope=True,
+        )
+    finally:
+        reset(token)
+    assert outcome.stop_reason == "eval_error"
+    assert outcome.kind == "error"
+    assert "185,000" not in (outcome.text or "")
+    assert "zillow" not in (outcome.text or "").lower()
+    assert "could not finish that answer this turn" in (outcome.text or "").lower()
 
 
 def test_gate_empty_draft_is_error_no_retry():
@@ -575,6 +719,18 @@ def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert "rent-roll-only refuse" in JUDGE_SYS.lower()
     assert "conceptual" in JUDGE_SYS.lower()
     assert "what is a rent roll" in JUDGE_SYS.lower()
+    assert "average property value" in JUDGE_SYS.lower()
+    assert "listing" in JUDGE_SYS.lower()
+    assert "off-topic" in JUDGE_SYS.lower()
+    assert "this-roll" in JUDGE_SYS.lower() or "this-roll payload" in JUDGE_SYS.lower()
+    assert "area/market" in JUDGE_SYS.lower()
+    assert "demographics" in JUDGE_SYS.lower()
+    assert "hazards" in JUDGE_SYS.lower()
+    assert "not a rent-roll question" in JUDGE_SYS.lower()
+    assert "search hits" in JUDGE_SYS.lower()
+    assert "population" not in JUDGE_SYS.lower()
+    assert "flood" not in JUDGE_SYS.lower()
+    assert "houston" not in JUDGE_SYS.lower()
     assert "what's your name" not in JUDGE_SYS.lower()
     assert "who are you" not in JUDGE_SYS.lower()
 

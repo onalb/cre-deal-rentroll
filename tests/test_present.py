@@ -94,6 +94,30 @@ def test_eval_json_is_operator_leak_and_not_user_facing():
     assert "schedule of tenants" not in shown_empty
 
 
+def test_failed_score_gcr_does_not_surface_last_scored_prose():
+    comps = (
+        "Recent listings in that metro average about $185,000. "
+        "See https://www.zillow.com/homedetails/example"
+    )
+    fail = {
+        "R": 1,
+        "G": 1,
+        "request_C": 1,
+        "judge": "llm",
+        "decision": "need_replan",
+        "hint": "need_replan — rewrite a cited definition",
+        "reason": "off-topic as it does not address the CRE rent-roll question",
+        "ok": True,
+    }
+    traces = [{"name": "score_gcr", "args": {"draft": comps}, "result": fail}]
+    assert last_scored_prose(traces) == ""
+    leak = json.dumps(fail)
+    shown = _user_facing_draft(leak, traces)
+    assert "185,000" not in shown
+    assert "zillow" not in shown.lower()
+    assert "could not finish" in shown.lower()
+
+
 def test_as_of_from_question_not_today():
     q = (
         "Abstract this rent roll: unit count, occupancy, in-place monthly income, "

@@ -4,15 +4,15 @@ import re
 from typing import Any
 
 OOS_TEXT = (
-    "I only answer questions about an uploaded rent roll — units, occupancy, "
-    "income, location, or underwriting. Attach a spreadsheet or ask about the deal."
+    "This agent answers questions about the property, the deal, or the area it "
+    "sits in — not personal chat."
 )
 
-_REFUSE_MARK = "only answer questions about an uploaded rent roll"
+_REFUSE_MARK = "answers questions about the property, the deal, or the area it sits in"
 
 
 def is_refuse_draft(text: str) -> bool:
-    """True when the model drafted the rent-roll-only refuse (not a Python swap)."""
+    """True when the model drafted the generic property/deal/area refuse."""
     return _REFUSE_MARK in (text or "").lower()
 
 NEED_FILE_TEXT = (
@@ -25,16 +25,16 @@ _SCOPE_SYS = (
     "You decide whether the LAST user message is in scope for a CRE rent-roll agent. "
     "Reply with exactly one token: IN_SCOPE or OOS. No tools. No other words.\n"
     "Empty chat history, empty memory, no uploaded rent roll, and no prior turns "
-    "do not make a CRE question OOS. Conceptual CRE is still IN_SCOPE on the first "
-    "message of a session.\n"
-    "IN_SCOPE: commercial real estate and rent-roll topics, even without a file. "
-    "Includes rent-roll definitions (what is a rent roll / what's a rent roll), "
-    "occupancy, income, NOI, cap rate, units, month-to-month, underwriting, "
-    "street, coordinates, map, locate; Multi-chip combo asks (map + occupancy + cap); "
-    "and short follow-ups (pronouns, 'again', that street). Prior turns may supply "
-    "the property; the last message can be short.\n"
-    "OOS only: weather, identity, the agent's name, greetings (hello/hi), "
-    "how-are-you, chitchat, sports, recipes, or other non-CRE talk."
+    "do not make an in-scope question OOS.\n"
+    "IN_SCOPE: questions about this property, the rent roll, the deal, or the "
+    "area/market it sits in (area/market facts too). If FACT#/vault/memory lack "
+    "the answer, it is still IN_SCOPE — the later hop should plan web_search. "
+    "A zip or city in the message is enough for search; 'in that area' uses "
+    "prior geocode/address. Short follow-ups stay "
+    "IN_SCOPE when prior turns supply the property.\n"
+    "OOS only when the user is talking to the agent as a person or idle chatting "
+    "(how are you, what's your name, hello, sports, recipes). "
+    "Idle weekend weather is OOS; facts about the property's area or market stay IN_SCOPE."
 )
 _TOKEN_SPLIT = re.compile(r"[\s,.:;!?]+")
 

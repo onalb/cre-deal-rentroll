@@ -892,7 +892,9 @@ def test_low_scores_do_not_python_retry_run_task(monkeypatch):
     outcome = run_task("tester", "What is occupancy?", skip_scope=True)
     assert n["n"] == 1
     assert outcome.stop_reason == "eval_error"
-    assert outcome.kind in {"error", "warning"}
+    assert outcome.kind == "error"
+    assert "92.07" not in (outcome.text or "")
+    assert "could not finish that answer this turn" in (outcome.text or "").lower()
 
 
 def test_unit_count_question_goes_through_react(monkeypatch):
