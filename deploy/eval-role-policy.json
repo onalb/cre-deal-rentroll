@@ -16,7 +16,12 @@
     },
     {
       "Effect": "Allow",
-      "Action": ["bedrock-agentcore:Evaluate", "bedrock:InvokeModel"],
+      "Action": [
+        "bedrock-agentcore:Evaluate",
+        "bedrock-agentcore:StartBatchEvaluation",
+        "bedrock-agentcore:GetBatchEvaluation",
+        "bedrock:InvokeModel"
+      ],
       "Resource": "*"
     }
   ]

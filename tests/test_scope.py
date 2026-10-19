@@ -47,9 +47,16 @@ def test_classify_prompt_is_generic_property_deal_area_vs_personal_chat():
     assert "web_search" in blob
     assert "no tools" in blob
     assert "oos only" in blob
+    assert "wrong country" in blob or "country or place" in blob
+    assert "search the map" in blob
+    assert "attached" in blob
+    assert "saved memos" in blob or "deal artifacts" in blob
+    assert "memo" in blob
     assert "flood" not in blob
     assert "population" not in blob
     assert "las vegas" not in blob
+    assert "mexico" not in blob
+    assert "united states" not in blob
     assert not hasattr(scope_mod, "_CRE")
 
 

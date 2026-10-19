@@ -100,6 +100,7 @@ def session(x_username: str | None = Header(default=None)) -> dict[str, Any]:
         "messages": sess.get("messages"),
         "pending_hitl": sess.get("pending_hitl"),
         "facts": retrieve_facts(user),
+        "memos": vault.list_memos(user),
         "vault": None
         if roll is None
         else {
@@ -125,6 +126,7 @@ def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, A
     last["history"] = sess.get("messages")
     last["all"] = list(outcomes)
     last["facts"] = retrieve_facts(user)
+    last["memos"] = vault.list_memos(user)
     roll = vault.load_roll(user)
     last["vault"] = (
         None
@@ -135,6 +137,7 @@ def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, A
             "geo_confidence": roll.geo_confidence,
         }
     )
+    last["pending_hitl"] = last.get("pending_hitl") or sess.get("pending_hitl")
     return last
 
 
@@ -255,4 +258,4 @@ def hitl_resolve(body: HitlBody, x_username: str | None = Header(default=None)) 
     kind = "hitl_denied" if result["status"] == "denied" else "answer"
     msgs.append({"role": "assistant", "content": result["text"], "kind": kind})
     vault.save_session(user, msgs, pending_hitl=None)
-    return {**result, "kind": kind, "history": msgs}
+    return {**result, "kind": kind, "history": msgs, "memos": vault.list_memos(user)}

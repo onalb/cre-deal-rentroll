@@ -1088,6 +1088,55 @@ def test_area_property_value_prompt_is_web_search_not_need_file(monkeypatch):
     assert NEED_FILE_TEXT.lower() not in area_block
 
 
+def test_vault_has_locate_correction_never_need_file_last_message_wins(monkeypatch):
+    from cre_rentroll.agents import system_prompt
+    from cre_rentroll.harness import _facts_for_agent
+    from cre_rentroll.scope import NEED_FILE_TEXT
+
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "FACT#property_name=La Cordoba")
+    has = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n")
+    facts = _facts_for_agent("tester", True)
+    history = [
+        {
+            "role": "user",
+            "content": (
+                "Put this property on a map, how many units are month-to-month, "
+                "and what cap rate is implied at a $12M ask?"
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": "Mapped to La Córdoba, Michoacán, México. 12 MTM. Cap 8%.",
+        },
+    ]
+    follow = session_prompt("It is not in Mexico it is in the USA", history)
+    search = session_prompt("Search the USA map", history)
+    attached = session_prompt("I already attached at the beginning", history)
+    create_doc = " ".join((create_plan.__doc__ or "").lower().split())
+
+    for blob in (has, facts, follow, search, attached):
+        assert NEED_FILE_TEXT not in blob
+        low = blob.lower()
+        assert "last user message wins" in low or "last user" in low
+        assert "need-file" in low
+        assert "previous osm town" in low
+        assert "ashford" not in low
+        assert "77082" not in low
+        assert "mexican town" not in low
+
+    assert "already ingested" in has.lower()
+    assert "never the need-file sentence" in has.lower()
+    assert "property_name" in has.lower() and "unit_count" in has.lower()
+    assert "web_search" in has.lower() and "osm_geocode" in has.lower()
+    assert follow.lower().rfind("it is not in mexico") > follow.lower().rfind("michoacán")
+    assert "search the usa map" in search.lower()
+    assert "i already attached at the beginning" in attached.lower()
+    assert "last user" in create_doc
+    assert "previous osm town" in create_doc
+    assert "mexico" not in has.lower()
+    assert "united states" not in has.lower()
+
+
 def test_session_prompt_keeps_current_user_when_history_is_huge():
     history = [
         {"role": "user", "content": f"old question {i} " + ("x" * 400)}

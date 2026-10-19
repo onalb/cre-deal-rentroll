@@ -82,6 +82,6 @@ Strands is the agent **framework** (chat loop stays `run_agent` on Runtime). **A
 | Payments | unused | skipped (no microtransactions) |
 | Registry | `CreateRegistry` denied for this account root | skipped; skills from disk `skills/` |
 | Observability | ADOT/`opentelemetry-instrument` + dashboard `cre-deal-rentroll-agentcore` | live after runtime image |
-| Evaluations | `Evaluate` `Builtin.Faithfulness` after `score_gcr`; online config `cre_deal_rentroll_online-Y9tvcwAgAk` | live |
+| Evaluations | **Batch** over Runtime CloudWatch traces (`deploy/start_batch_evaluation.py`). Live G/C/R is still `score_gcr`. No per-turn `client.evaluate`. | batch |
 
 Resident names on La Cordoba are stripped at ingest and should not be committed.

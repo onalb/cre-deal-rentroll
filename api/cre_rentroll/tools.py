@@ -69,6 +69,22 @@ WORK_TOOL_NAMES = frozenset(
         "publish_memo",
     }
 )
+MEMO_PUBLISH_RULE = (
+    "If THIS last message asks to create or publish a memo, or is proceed / yes after "
+    "a memo ask, the first (and typically only) work tool is publish_memo with title+body "
+    "synthesizing THIS session (all properties/deals in prior User/Assistant turns), "
+    "not only the current FACT# roll. Python does not write the memo text. The ONLY "
+    "allowed first work tool is real MCP publish_memo — NEVER print functions.publish_memo "
+    "JSON, recipient_name tool JSON, or 'Let's proceed'. A one-item create_plan is fine; "
+    "then IMMEDIATELY call the tool the same turn if possible; do not dump the memo as "
+    "chat before the tool; do not extra create_plan loops. After publish_memo, stop for "
+    "HITL — do not score_gcr the memo body as the answer. After HITL Approve, memos "
+    "persist as Dynamo MEMO# on this user (listed in FACTS). If THIS last message asks "
+    "for saved memos, vault notes, or a published memo already in FACTS, answer only "
+    "from those MEMO# rows — do not call publish_memo, and do not treat prior chat "
+    "as the vault memo. If FACTS has no MEMO# rows, say none are published after "
+    "HITL Approve — do not reconstruct a memo from session numbers."
+)
 _HEADLINE_COUNT_RE = re.compile(
     r"\b(unit_count|unit count|occupied_count|vacant_count|occupancy_pct|"
     r"occupancy|occupied|vacant|units|mtm_count|mtm|month[\s-]*to[\s-]*month)\b",
@@ -584,15 +600,33 @@ def create_plan(tasks: str) -> str:
     work tool — not per comma in the user sentence. A one-item checklist is fine
     when that one tool answers the whole last message (this-deal occupancy only →
     query_units; map-only → osm_geocode; vacant-only → query_units; definition of
-    a rent roll → web_search; average property value in that area / metro / comps /
-    area/market facts → web_search; zip/city in the message is enough; in that
-    area uses last geocode/address_hint; one web_search). Only if THIS last message asks for
+    a rent roll → web_search; create/publish a memo → the first (and typically
+    only) work tool is publish_memo with title+body synthesizing THIS session
+    — all properties/deals in prior User/Assistant turns — not only the current
+    FACT# roll; Python does not write the memo text; NEVER print
+    functions.publish_memo JSON or 'Let's proceed'; a one-item create_plan is
+    fine; then IMMEDIATELY call publish_memo the same turn if possible; do not
+    dump the memo as chat before the tool; do not extra create_plan loops;
+    proceed / yes after a memo ask still means publish_memo, not another plan;
+    average property value in that area / metro / comps / area/market
+    facts → web_search; zip/city in the message is enough; in that area uses last
+    geocode/address_hint; one web_search). Only if THIS last message asks for
     map AND month-to-month AND cap: list osm_geocode, query_units, and
     compute_cap_rate as three items. Never copy that three-item list onto a
-    definition or occupancy-only ask. Locate/map with no other CRE ask is one
-    osm_geocode item — not query_units, compute_income, or compute_noi. Never
+    definition or occupancy-only ask.     Locate/map with no other CRE ask is one
+    osm_geocode item — not query_units, compute_income, or compute_noi. If they
+    correct the last pin's country/place or say search the map again, last User
+    message wins: web_search then osm_geocode from FACT# property_name,
+    unit_count, as_of, address_hint constrained by what they said — not the
+    previous OSM town. When the roll is already ingested, never the need-file
+    sentence for that follow-up. Never
     osm_geocode / compute_cap_rate / compute_noi unless THIS last message asked.
     Tag the current step [in_progress], the rest [pending].
+
+    Recalling saved memos / vault notes / a published memo already in FACTS is
+    in-scope CRE: answer from MEMO# rows (or say none published after HITL);
+    do not list publish_memo unless they asked to create a new one; do not treat
+    chat history as the vault memo.
 
     WHEN NOT: Talking to the agent as a person or idle chat (identity, greetings,
     the agent's name, chitchat) — do not call this tool. Idle weekend weather is
@@ -1142,6 +1176,9 @@ def osm_geocode(query: str) -> str:
     How: public Nominatim; returns display_name, lat, lon. On error, say so (harness replans).
     When not: RollAbstractor / Q1; Underwriter / Q3 (OSM is forbidden there).
     Query must be a place or street+city — never a CSV/xlsx filename.
+    If the last User message corrected the country/place, constrain the query
+    with that correction and roll FACT# (property_name, unit_count, as_of,
+    address_hint); do not reuse the previous OSM town. Never invent a street.
     """
     q = (query or "").strip()
     if not q:
@@ -1178,9 +1215,11 @@ def web_search(query: str, max_results: int = 5) -> str:
     When: average property value in that area / metro / comps; area/market
     facts (demographics, hazards, comps). 'In that area' uses last
     geocode/address_hint; zip/city in the message is enough. Q2 if
-    geo_confidence is low; Q3 multifamily cap-rate / sale news for THIS
-    property's city/metro (FACT# / address_hint / last geocode — never invent
-    a metro). One-item create_plan is enough. Never
+    geo_confidence is low or the user corrected the last pin's country/place
+    (search using FACT# property_name, unit_count, as_of, address_hint plus
+    that correction — not the previous OSM town); Q3 multifamily cap-rate /
+    sale news for THIS property's city/metro (FACT# / address_hint / last
+    geocode — never invent a metro). One-item create_plan is enough. Never
     require a spreadsheet for that ask. Python does not write a canned figure.
     What: query string; max_results default 5.
     How: returns title/href/snippet JSON. On failure return error JSON so the
@@ -1210,18 +1249,44 @@ def web_search(query: str, max_results: int = 5) -> str:
 
 
 def publish_memo(title: str, body: str) -> str:
-    """Write an underwriting memo to the deal file (sensitive).
+    """Write an underwriting memo (sensitive). Python does not write the memo text.
 
-    When: only when the user asks to publish / save a memo (Q-hitl).
-    What: title and body text. Not required for Q1–Q3 answers.
-    How: HITL must approve in the UI before this runs. Session is saved first.
-    When not: answering abstracts, maps, or cap-rate questions.
+    When: only when the user asks to create/publish/save a memo (Q-hitl). The
+    first (and typically only) work tool is publish_memo — call it before any
+    user-facing memo text. NEVER print functions.publish_memo JSON or
+    'Let's proceed'. A one-item create_plan is fine; then IMMEDIATELY call the
+    tool the same turn if possible; do not dump the memo as chat before the
+    tool; do not extra create_plan loops. Proceed / yes after a memo ask still
+    means this tool, not another plan dump.
+    What: you supply title and body in the tool args. Body must synthesize THIS
+    session — every property/deal discussed in prior User/Assistant turns — not
+    only the current FACT# / VAULT#default roll. Do not omit earlier deals in
+    this chat just because a later roll is loaded. Python does not write the
+    memo text.
+    How: HITL must approve in the UI before this publishes. Session stores
+    pending_hitl (title + body). After Approve, Python persists title/body/ts as
+    MEMO#{ts} on USER#{username} (same pk as VAULT#default). Python does not
+    draft or rewrite the body. Later asks for a saved / published memo or vault
+    notes answer only from those MEMO# rows in harness facts — never republish,
+    and never treat prior chat as the vault memo. If no MEMO# rows, say none
+    are published after HITL Approve.
+    When not: answering abstracts, maps, or cap-rate questions with no memo ask;
+    do not score_gcr the memo body as the answer instead of this tool.
     """
     if not turn_ctx.hitl_allowed():
         pending = {"tool": "publish_memo", "title": title, "body": body}
         turn_ctx.record("publish_memo", pending, {"status": "pending_hitl"})
         return json.dumps({"status": "pending_hitl", "title": title})
-    payload = {"status": "published", "title": title, "bytes": len(body or "")}
+    saved: dict[str, Any] = {}
+    user = turn_ctx.username()
+    if user:
+        saved = vault.save_memo(user, title, body)
+    payload = {
+        "status": "published",
+        "title": title,
+        "bytes": len(body or ""),
+        "ts": saved.get("ts"),
+    }
     turn_ctx.record("publish_memo", {"title": title}, payload)
     return json.dumps(payload)
 
@@ -1230,14 +1295,19 @@ def score_gcr(draft: str) -> str:
     """Score the sentence you would show the user (G / request-C / R + vault_calc).
 
     WHEN TO USE: SELF-CHECK before the user-facing answer. Required before text-only
-    end_turn on a CRE/rent-roll answer. Call once with the exact sentence you would
+    end_turn on a CRE/rent-roll answer — except create/publish memo: the first
+    (and typically only) work tool is publish_memo; do not dump the memo as chat
+    or score_gcr it before the tool. Call once with the exact sentence you would
     show. Forbidden to stop with a sentence and no score_gcr. If min(G, request_C) <= 2,
     need_replan, then score_gcr again. Do not add vault calculators when the ask is a
     CRE definition and the draft was off-topic deal numbers — rewrite a cited
     definition (web_search if needed). Area/market facts (demographics, hazards,
     comps) are in-scope CRE: do not rewrite a rent-roll definition or score as
     off-topic rent-roll; citations/search hits are the payload. Do not require
-    occupancy numbers. vault_calc N/A (a cited
+    occupancy numbers. Locate / map / last-pin country or place correction is
+    on-topic locate: a cited osm_geocode/map sentence is the payload — do not
+    score G=1 off-topic or hide it. Do not require occupancy numbers.
+    vault_calc N/A (a cited
     number not in the vault allowlist, including derived math) is not a fail. Conceptual
     CRE definitions and area/market drafts do not need occupancy/income/unit figures. Do not return to the user
     until G/C are ok or you hit the turn limit. Do not require RollAbstract JSON.

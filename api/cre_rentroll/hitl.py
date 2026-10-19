@@ -6,6 +6,16 @@ from cre_rentroll import turn_ctx, vault
 from cre_rentroll.tools import publish_memo
 
 
+def memo_chat_text(pending: dict[str, Any] | None) -> str:
+    """Surface the HITL memo in chat. Does not draft; uses pending_hitl title+body."""
+    pending = pending or {}
+    title = str(pending.get("title") or "memo").strip()
+    body = str(pending.get("body") or "").strip()
+    if body:
+        return f"{title}\n\n{body}"
+    return title
+
+
 def request_or_run(title: str, body: str, username: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
     """HITL: save session, then either pause for UI approval or publish."""
     pending = {"tool": "publish_memo", "title": title, "body": body}
@@ -13,7 +23,7 @@ def request_or_run(title: str, body: str, username: str, messages: list[dict[str
     if turn_ctx.hitl_allowed():
         result = publish_memo(title, body)
         vault.save_session(username, messages, pending_hitl=None)
-        return {"status": "published", "result": result}
+        return {"status": "published", "text": memo_chat_text(pending), "result": result}
     return {"status": "pending_hitl", "pending_hitl": pending}
 
 
@@ -28,4 +38,4 @@ def resolve(username: str, allow: bool, messages: list[dict[str, Any]]) -> dict[
     turn_ctx.reset_turn(username, hitl_allow=True)
     result = publish_memo(pending.get("title") or "memo", pending.get("body") or "")
     vault.save_session(username, messages, pending_hitl=None)
-    return {"status": "published", "text": "The memo was saved.", "result": result}
+    return {"status": "published", "text": memo_chat_text(pending), "result": result}

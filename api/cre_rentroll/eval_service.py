@@ -105,8 +105,21 @@ _DEAL_FIGURE = re.compile(
     r"how many|percent|\bpct\b|%|on this|this (?:rent[\s-]*roll|property|deal|asset)|"
     r"in[\s-]*place|monthly income|abstract this|compute|calculat|"
     r"vacant count|unit count|occupied count|implied cap|asking price|"
-    r"geocode|on a map|where is this"
+    r"geocode|on a map|the map|\bmap\b|where is this|where is it"
     r")\b"
+)
+# Locate / last-pin country or place correction — not a place-name list.
+_LOCATE = re.compile(
+    r"(?i)(?:"
+    r"\bmap\b|"
+    r"\bgeocode|"
+    r"\bwhere is (?:this|it|the property)\b|"
+    r"\bput .{0,40}\bmap\b|"
+    r"\blocated\b|"
+    r"\blocation\b|"
+    r"\bcountry\b|"
+    r"\b(?:not|isn't|is not)\s+in\b"
+    r")"
 )
 # Area/market facts — in-scope CRE, not a rent-roll definition or this-roll occupancy.
 # Category stems (area/market/zip/city, demographics, hazards, comps); not a place-name list.
@@ -131,10 +144,52 @@ _THIS_ROLL_TERMS = re.compile(
 )
 
 
+def ask_is_locate(query: str) -> bool:
+    """True for map / where / last-pin country or place correction — not occupancy."""
+    text = (query or "").replace("\u2019", "'").replace("\u2018", "'").strip()
+    if not text or _CHAT_FOLLOW.search(text):
+        return False
+    if _THIS_ROLL_TERMS.search(text):
+        return False
+    return bool(_LOCATE.search(text))
+
+
+def cited_locate_map_draft(query: str, draft: str, traces: list[dict[str, Any]]) -> bool:
+    """True when a locate follow-up draft cites this-turn osm_geocode (not occupancy)."""
+    if not ask_is_locate(query):
+        return False
+    text = (draft or "").strip()
+    if len(text) < 12:
+        return False
+    low = text.lower()
+    for t in traces or []:
+        if str(t.get("name") or "") != "osm_geocode":
+            continue
+        result = t.get("result")
+        if not isinstance(result, dict) or not result.get("ok"):
+            continue
+        name = str(result.get("display_name") or "").strip()
+        lat = result.get("lat")
+        lon = result.get("lon")
+        if name and name.lower()[:32] in low:
+            return True
+        if lat is not None and str(lat)[:6] in text:
+            return True
+        if lon is not None and str(lon)[:6] in text:
+            return True
+        if "lat" in low and ("lon" in low or "lng" in low):
+            return True
+        if name and any(part.lower() in low for part in name.split(",")[:2] if len(part.strip()) >= 4):
+            return True
+    return False
+
+
 def ask_is_market_area(query: str) -> bool:
     """True for in-scope area/market facts (demographics, hazards, comps), not this-roll occupancy."""
     text = (query or "").replace("\u2019", "'").replace("\u2018", "'").strip()
     if not text or _CHAT_FOLLOW.search(text):
+        return False
+    if ask_is_locate(text):
         return False
     if _MARKET_AREA.search(text):
         return True
@@ -165,7 +220,7 @@ def ask_is_conceptual(query: str) -> bool:
     text = (query or "").replace("\u2019", "'").replace("\u2018", "'").strip()
     if not text:
         return False
-    if ask_is_market_area(text):
+    if ask_is_market_area(text) or ask_is_locate(text):
         return False
     if _DEAL_FIGURE.search(text):
         return False
@@ -173,8 +228,8 @@ def ask_is_conceptual(query: str) -> bool:
 
 
 def ask_skips_vault_payload(query: str) -> bool:
-    """Definitions and area/market-fact drafts are CRE payload without occupancy %."""
-    return ask_is_conceptual(query) or ask_is_market_area(query)
+    """Definitions, locate/map, and area/market-fact drafts are CRE payload without occupancy %."""
+    return ask_is_conceptual(query) or ask_is_market_area(query) or ask_is_locate(query)
 
 
 def need_replan_hint(query: str, *, vault_label: str | None = None) -> str:
@@ -186,6 +241,15 @@ def need_replan_hint(query: str, *, vault_label: str | None = None) -> str:
             "(query_units, compute_income, compute_noi, compute_cap_rate) or osm_geocode "
             "unless THIS message asked. Rewrite a cited definition (web_search if needed), "
             "then score_gcr again"
+        )
+    elif ask_is_locate(query):
+        hint = (
+            "need_replan — last User message is locate/map or a correction of the "
+            "last pin's country/place, not occupancy/units/this-roll. Do not add "
+            "vault calculators (query_units, compute_income, compute_noi, "
+            "compute_cap_rate) and do not rewrite a rent-roll definition or score "
+            "G as off-topic rent-roll. web_search then osm_geocode from roll facts "
+            "constrained by the last User message; citations/geocode are the payload"
         )
     elif ask_is_market_area(query):
         hint = (
@@ -486,11 +550,13 @@ JUDGE_SYS = """You are a CRE rent-roll eval judge. Score integers 1-5. Return JS
 
 R (relevance): Is the answer on-topic for this user question? High if it addresses the CRE ask. High if the user asked identity, greetings, weather, sports, recipes, or other non-deal chat and the answer is the rent-roll-only refuse. Low (1-2) if a CRE ask gets off-topic chatter, or if a non-deal ask gets a CRE/tool answer instead of the refuse.
 - Any in-scope area/market question (demographics, hazards, comps, average property value, listings) is on-topic CRE. High R if the answer cites search hits or a stated area/market figure. Citations/search hits are the payload. Do not score R=1 as off-topic / "not a rent-roll question" for omitting occupancy, units, this-roll payload, or a rent-roll definition. Listing URLs are allowed.
+- Locate / map / where is this property / the user correcting the last geocode's country or place / search the map again is on-topic locate for THIS deal. High R if the answer cites osm_geocode, search hits, or FACT# street. Do not score R=1 as off-topic / "not a rent-roll question".
 
 G (groundedness): Are numeric and factual claims supported by VAULT / tools / FACT# / RollAbstract numbers, or by arithmetic from those plus rents the USER stated in QUERY?
 - Identity, greetings, weather, or other non-deal chat: the rent-roll-only refuse is grounded. Do not low-G it for omitting vault numbers.
 - Conceptual / definitional CRE (what is a rent roll, occupancy, NOI): an on-topic explanation grounded in search hits / FACT# / tools is grounded. Do not low-G for omitting occupancy %, income, unit counts, or other vault numbers when the user did not ask for this deal's figures.
 - Area/market facts (demographics, hazards, comps, average property value): a cited figure and search-hit / FACT# / tool citations are grounded. Do not low-G or G=1 "not a rent-roll question" for omitting occupancy %, income, unit counts, or this-roll vault numbers. Do not require occupancy numbers.
+- Locate / map / last-pin country or place correction: a cited osm_geocode / search-hit / FACT# street (display_name, lat, lon) is grounded. Do not low-G or G=1 "not a rent-roll question" / off-topic for omitting occupancy %, income, unit counts, or this-roll occupancy payload. Do not require occupancy numbers.
 - Rate fraction vs percent is the SAME figure: occupancy_pct 0.9207 and 92.07%, implied_cap 0.2908 and 29.08% (also 29.1% or 29%) are both grounded. Do not lower G for converting 0.080 ↔ 8.0%, 0.9207 ↔ 92.07%, or rounding a displayed percent. Distinct rates (8% vs 29%) are not the same figure.
 - If the user asked only for vacant count (vacant-only), do not lower G for omitting occupancy, income, NOI, or unit mix.
 - User-stated scenario rents (e.g. vacant units at $5,000/month) are grounded in QUERY. vacant_count × that rent × 12, and in_place_annual + that fill, are grounded. Do not low-G a full-occupancy total for including occupied in-place.
@@ -500,10 +566,11 @@ C (request completeness — not gold.json): Did the answer cover what was asked 
 - Identity, greetings, weather, or other non-deal chat: the rent-roll-only refuse is complete. Do not low-C it for omitting a name or a weather forecast.
 - Conceptual / definitional CRE: a correct cited explanation is complete. Do not require vault occupancy/income/unit figures on those asks.
 - Area/market facts: a cited figure and/or search hits / listing links is complete. Do not require occupancy/units/this-roll payload or a rent-roll definition. Do not fail C as "not a rent-roll question".
+- Locate / map / last-pin country or place correction: a cited geocode/map sentence is complete. Do not require occupancy/units/this-roll payload or a rent-roll definition. Do not fail C as "not a rent-roll question".
 - Vacant-only questions do NOT require occupancy %, income, geocode, or NOI.
 - Occupied-only in-place monthly is not 100% occupancy / all-units-occupied / no-vacant income. Repeating in_place_monthly when the user asked for full occupancy (or said the dollar figure is the same as with vacancy) is low C. Occupancy counts are not a substitute for that income estimate.
 - If the user asked income if ALL units are occupied and gave a fill rent for vacant units, the complete figure is occupied in-place plus vacant fill (annualize if they asked annual). Do not fail C for reporting that total. Do not treat vacant-fill-only ($780k) as the whole ask unless they asked only for the vacant increment.
-- Do not require lat/lon unless the user asked location / map / geocode.
+- Do not require lat/lon unless the user asked location / map / geocode / corrected the last pin.
 - Do not treat CI gold fields as required.
 
 Judge only from QUERY, ANSWER, and FACTS. Do not use DeepEval.

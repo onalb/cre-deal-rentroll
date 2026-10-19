@@ -134,12 +134,19 @@ def system_prompt(inv: Inventory, facts: str) -> str:
             "answer. Python does not write a canned area/market figure. "
             "Talking to the agent as a person or idle chat stay out of scope even with "
             "a vaulted roll — no tools, use the refuse sentence. "
-            "Locate / map / where is this property: never pass a "
-            "spreadsheet filename or 'Rent Roll' title to osm_geocode. Use FACT# "
-            "address_hint if it is a street/city. If geo_confidence is low or the "
-            "hint is empty, web_search for a street address that matches unit_count, "
-            "then osm_geocode that street string. If OSM has no hits, mark locate "
-            "[incomplete] and say you cannot place it on a map — do not loop.\n"
+            "Locate / map / where is this property / they say the last geocode is the "
+            "wrong country or place / search the map again: still THIS roll. Never the "
+            "need-file sentence. Saying they already attached the spreadsheet is not a "
+            "new file ask. Never pass a spreadsheet filename or 'Rent Roll' title to "
+            "osm_geocode. Last User message wins: web_search then osm_geocode using "
+            "FACT# property_name, unit_count, as_of, address_hint constrained by the "
+            "country/place they just named — do not reuse the previous OSM town. Use "
+            "FACT# address_hint if it is a street/city and still matches that "
+            "correction. If geo_confidence is low, the hint is empty, or they rejected "
+            "the last pin, web_search for a street that matches those roll facts and "
+            "their correction, then osm_geocode that street string. Never invent a "
+            "street. If OSM has no hits, mark locate [incomplete] and say you cannot "
+            "place it on a map — do not loop.\n"
         )
     else:
         file_scope = (
@@ -165,14 +172,18 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Intent is your first create_plan checklist — Python does not pick a specialist. "
         "Python does not start a second run_agent if the draft is empty.\n"
         "Questions about this property, the rent roll, the deal, or the area/market "
-        "it sits in are in scope — never the out-of-scope refuse. If FACT#/vault/memory "
-        "lack a fact, plan web_search. Short follow-ups (again, pronouns, that street) stay "
-        "in-scope. Buy / worth / should I acquire THIS deal is in-scope "
+        "it sits in are in scope — never the out-of-scope refuse. Deal artifacts in "
+        "vault/session (saved memos, vault notes, a published memo) are in scope. "
+        "If FACT#/vault/memory "
+        "lack a fact, plan web_search. Short follow-ups (again, pronouns, that street, "
+        "wrong country/place on the last pin, search the map again) stay in-scope. "
+        "Buy / worth / should I acquire THIS deal is in-scope "
         "underwriting even with no opex or ask price — never the out-of-scope refuse. "
         "Average property value in that area / metro / comps / area/market facts "
         "(demographics, hazards, comps) uses web_search "
-        "(one-item create_plan is fine) from FACT# address_hint / last US geocode, "
-        "or a zip/city in the message — never a Mexican town named La Córdoba, never invent a metro, never the "
+        "(one-item create_plan is fine) from FACT# address_hint / last geocode, "
+        "or a zip/city in the message — if they corrected the country/place, do not "
+        "reuse the previous OSM town; never invent a metro, never the "
         "need-file sentence. 'In that area' uses last geocode/address_hint. "
         "Python does not write a canned area/market figure. "
         "Do not introduce yourself or answer identity, greetings, or the agent's name. "
@@ -189,20 +200,25 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "'osm_geocode, query_units' as one item. "
         "Never skip create_plan on in-scope CRE. A one-item checklist is fine when that one tool "
         "answers the whole last message (this-deal occupancy only → query_units; map-only → "
-        "osm_geocode; definition of a rent roll → web_search; average property value in "
+        "osm_geocode; definition of a rent roll → web_search; create/publish a memo → "
+        "the first (and typically only) work tool is publish_memo; average property value in "
         "that area / metro / comps / area/market facts → web_search; one web_search). "
         "One work tool per numbered line. Tag the current step [in_progress] and the rest "
         "[pending]. Do not call create_plan again. "
-        "Locate / map / where is this property with NO other CRE ask → one osm_geocode item only, "
-        "then score_gcr with the map sentence. Do not add query_units on a map-only question. "
+        "Locate / map / where is this property / last-pin country or place correction "
+        "with NO other CRE ask → web_search then osm_geocode (one osm_geocode item is "
+        "fine when a matching street is already in FACT#), then score_gcr with the map "
+        "sentence. Do not add query_units on a map-only question. Last User message "
+        "wins over a prior OSM town. "
         "If THIS last message needs map AND MTM AND cap, those MUST be create_plan items from the "
         "start (osm_geocode, query_units, compute_cap_rate — not map-only). That three-item list "
         "is only for that ask — never copy it onto a definition, occupancy-only, or other CRE turn. "
         "Never call a work tool that is not on the checklist. If you discover extra work after "
         "create_plan, call update_plan with the NEW remaining work FIRST (add the missing items), then that tool. "
-        "osm_geocode query is the street address from FACT#/address_hint or the roll — never "
-        "the unit_count (do not geocode 'La Cordoba, 164' when 164 is unit count) and never "
-        "the trade name alone when address_hint has a street/city (e.g. Panindícuaro). "
+        "osm_geocode query is the street from FACT#/address_hint or web_search, constrained "
+        "by the last User geography correction — never append unit_count as if it were a "
+        "city, never the trade name alone when address_hint has a street/city, and never "
+        "the previous OSM town after they said that pin is the wrong country or place. "
         "Do not pad with abstract or underwrite steps unless THIS last message asked for those numbers. "
         "Do not re-run prior-session map / occupancy / income / NOI / cap tools unless THIS message asked. "
         "Conceptual CRE (what is a rent roll, occupancy, NOI): one web_search (or one definitional "
@@ -210,6 +226,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "compute_noi / query_units unless THIS message asked for location or this deal's figures. "
         "Talking to the agent as a person or idle chat: no create_plan, no score_gcr, "
         "and no other tools.\n"
+        f"{tools.MEMO_PUBLISH_RULE}\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
         "compute_noi, compute_cap_rate, osm_geocode, web_search, or publish_memo). After that vault "
         "tool, call update_plan_status with the SAME items: mark that step [completed] and the next "
@@ -920,6 +937,13 @@ def _run_openai_tools_loop(
         msg = resp.choices[0].message
         if not msg.tool_calls:
             react_text = msg.content or ""
+            from cre_rentroll.present import leaked_publish_memo_args
+
+            leaked = leaked_publish_memo_args(react_text)
+            impl = impls.get("publish_memo") if leaked else None
+            if leaked and impl is not None:
+                impl(leaked["title"], leaked["body"])
+                react_text = json.dumps({"status": "pending_hitl", "title": leaked["title"]})
             messages.append({"role": "assistant", "content": react_text})
             break
         messages.append(
@@ -974,12 +998,18 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                         "(not per comma in the user sentence) — never comma-join two tools. "
                         "A one-item list is fine when that one tool answers the whole last message "
                         "(this-deal occupancy only → query_units; definition of a rent roll → "
-                        "web_search; average property value in that area / metro / comps / "
+                        "web_search; create/publish a memo or proceed/yes after a memo ask → "
+                        "the first (and typically only) work tool is publish_memo — then "
+                        "IMMEDIATELY call MCP publish_memo the same turn; NEVER print "
+                        "functions.publish_memo JSON or 'Let's proceed'; "
+                        "average property value in that area / metro / comps / "
                         "area/market facts → web_search; zip/city in the message is enough; "
                         "in that area uses last geocode/address_hint). Only if THIS last message asks map AND MTM AND cap: "
                         "osm_geocode, query_units, and compute_cap_rate as three items. "
                         "Never copy that three-item list onto a definition or occupancy-only ask. "
-                        "Map-only → one osm_geocode line. "
+                        "Map-only → one osm_geocode line. Last User geography "
+                        "correction → web_search then osm_geocode from FACT# "
+                        "(not the previous OSM town). "
                         "Tag the current step [in_progress], the rest [pending]. "
                         "Do not call again — update_plan_status for statuses; "
                         "update_plan to add missing tools or replace the list on replan. "
@@ -1106,8 +1136,10 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                 "query": {
                     "type": "string",
                     "description": (
-                        "Street, city, or property trade name. Never a rent-roll "
-                        "filename (e.g. 'La Cordoba Rent Roll 04-20-21')."
+                        "Street, city, or property trade name constrained by the "
+                        "last User geography correction and FACT# roll facts. "
+                        "Never a rent-roll filename. Never the previous OSM town "
+                        "after they said that pin is the wrong country or place."
                     ),
                 }
             },
@@ -1123,7 +1155,22 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
         },
         "publish_memo": {
             "type": "object",
-            "properties": {"title": {"type": "string"}, "body": {"type": "string"}},
+            "properties": {
+                "title": {"type": "string", "description": "Memo title."},
+                "body": {
+                    "type": "string",
+                    "description": (
+                        "Full memo synthesizing THIS session's User/Assistant turns "
+                        "for ALL properties/deals discussed, not only the current "
+                        "FACT# roll. Python does not write this text. Call the "
+                        "real MCP publish_memo tool — NEVER print "
+                        "functions.publish_memo JSON or 'Let's proceed'. "
+                        "publish_memo first — do not dump the memo as chat before "
+                        "the tool. One-item create_plan then IMMEDIATELY call this "
+                        "tool the same turn if possible."
+                    ),
+                },
+            },
             "required": ["title", "body"],
         },
     }

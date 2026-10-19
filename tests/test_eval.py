@@ -4,9 +4,11 @@ from cre_rentroll.eval_service import (
     JUDGE_SYS,
     _judge_facts,
     ask_is_conceptual,
+    ask_is_locate,
     ask_is_market_area,
     ask_is_market_comps,
     ask_skips_vault_payload,
+    cited_locate_map_draft,
     ci_aggregate,
     format_eval_log,
     gate,
@@ -273,6 +275,106 @@ def test_failed_eval_does_not_return_comps_draft(monkeypatch):
     assert "185,000" not in (outcome.text or "")
     assert "zillow" not in (outcome.text or "").lower()
     assert "could not finish that answer this turn" in (outcome.text or "").lower()
+
+
+def test_locate_correction_is_on_topic_payload_not_market_area():
+    draft = (
+        "The property geocodes to Example Apartments, Example City, TX, "
+        "United States at lat 29.7195 lon -95.6084."
+    )
+    traces = [
+        {
+            "name": "osm_geocode",
+            "result": {
+                "ok": True,
+                "display_name": "Example Apartments, Example City, TX, United States",
+                "lat": 29.7195,
+                "lon": -95.6084,
+            },
+        }
+    ]
+    asks = (
+        "It is not in Mexico it is in the USA",
+        "Search the USA map",
+        "Where is this property? Can you put it on a map?",
+    )
+    for q in asks:
+        assert ask_is_locate(q)
+        assert not ask_is_market_area(q)
+        assert not ask_is_conceptual(q)
+        assert ask_skips_vault_payload(q)
+        assert has_cre_payload(draft, q)
+        assert cited_locate_map_draft(q, draft, traces)
+    hint = need_replan_hint(asks[0])
+    assert "off-topic" in hint.lower()
+    assert "osm_geocode" in hint.lower()
+    assert "occupancy" in hint.lower()
+    assert not ask_is_locate("What's the average property value in that area?")
+    assert not cited_locate_map_draft(asks[0], "Hello there friend.", traces)
+
+
+def test_cited_locate_offtopic_eval_shows_map_draft(monkeypatch):
+    from cre_rentroll.harness import run_task
+    from cre_rentroll.run_events import bind, reset
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import record
+
+    draft = (
+        "The property geocodes to Example Apartments, Example City, TX, "
+        "United States at lat 29.7195 lon -95.6084."
+    )
+    geo = {
+        "ok": True,
+        "display_name": "Example Apartments, Example City, TX, United States",
+        "lat": 29.7195,
+        "lon": -95.6084,
+    }
+
+    def fake_agent(*_a, **_k):
+        record("osm_geocode", {"query": "property USA"}, geo)
+        score_gcr(draft)
+        return draft
+
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "FACT#property_name=La Cordoba")
+    monkeypatch.setattr(
+        "cre_rentroll.vault.load_roll",
+        lambda u: CanonicalRentRoll(
+            layout="one_row",
+            property_name="La Cordoba",
+            units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
+        ),
+    )
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=1,
+            G=1,
+            request_C=1,
+            vault_calc_ok=None,
+            judge="llm",
+            reason="off-topic as it does not address the CRE rent-roll question",
+        ),
+    )
+    token = bind(lambda *_a, **_k: None)
+    try:
+        outcome = run_task(
+            "tester",
+            "Search the USA map",
+            skip_scope=True,
+        )
+    finally:
+        reset(token)
+    assert outcome.kind == "answer"
+    assert "could not finish" not in (outcome.text or "").lower()
+    assert "29.7195" in (outcome.text or "")
+    assert "Example Apartments" in (outcome.text or "")
 
 
 def test_gate_empty_draft_is_error_no_retry():
@@ -728,9 +830,15 @@ def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert "hazards" in JUDGE_SYS.lower()
     assert "not a rent-roll question" in JUDGE_SYS.lower()
     assert "search hits" in JUDGE_SYS.lower()
+    assert "locate" in JUDGE_SYS.lower()
+    assert "map" in JUDGE_SYS.lower()
+    assert "country" in JUDGE_SYS.lower()
+    assert "osm_geocode" in JUDGE_SYS.lower()
     assert "population" not in JUDGE_SYS.lower()
     assert "flood" not in JUDGE_SYS.lower()
     assert "houston" not in JUDGE_SYS.lower()
+    assert "mexico" not in JUDGE_SYS.lower()
+    assert "united states" not in JUDGE_SYS.lower()
     assert "what's your name" not in JUDGE_SYS.lower()
     assert "who are you" not in JUDGE_SYS.lower()
 

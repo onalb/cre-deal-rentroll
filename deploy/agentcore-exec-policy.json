@@ -84,6 +84,8 @@
         "bedrock-agentcore:BatchUpdateMemoryRecords",
         "bedrock-agentcore:BatchDeleteMemoryRecords",
         "bedrock-agentcore:Evaluate",
+        "bedrock-agentcore:StartBatchEvaluation",
+        "bedrock-agentcore:GetBatchEvaluation",
         "bedrock-agentcore:SearchRegistryRecords",
         "bedrock-agentcore:StartCodeInterpreterSession",
         "bedrock-agentcore:StopCodeInterpreterSession",

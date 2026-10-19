@@ -60,9 +60,18 @@ def facts_prompt(username: str) -> str:
         ac_lines = facts_from_memory(username)
     except Exception:
         ac_lines = []
+    memo_block = ""
+    try:
+        from cre_rentroll.vault import memos_prompt
+
+        memo_block = memos_prompt(username)
+    except Exception:
+        memo_block = ""
     parts: list[str] = []
     if lines:
         parts.append("Known deal facts (Dynamo LTM, auto-injected):\n" + "\n".join(lines))
+    if memo_block:
+        parts.append(memo_block)
     if ac_lines:
         parts.append("AgentCore Memory records:\n" + "\n".join(f"- {x}" for x in ac_lines[:8]))
     if not parts:

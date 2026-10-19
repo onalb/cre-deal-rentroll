@@ -47,6 +47,13 @@ const DEMO_CHIPS = [
     prompt: "Where is this property? Can you put it on a map?",
   },
   {
+    id: "create-memo",
+    level: "medium",
+    label: "Create memo",
+    searchFail: false,
+    prompt: "Create a memo synthesizing this session.",
+  },
+  {
     id: "underwrite",
     level: "medium",
     label: "Income vs ask",
@@ -99,7 +106,28 @@ function displayContent(m) {
     return c;
   }
   c = c.replace(/\n*—\s*Warning:\s*live eval[\s\S]*$/i, "").trim();
+  c = c
+    .split("\n")
+    .filter((line) => {
+      if (/^\s*Creating the Memo\b/i.test(line)) return false;
+      if (/^\s*Now I will proceed\b/i.test(line)) return false;
+      if (/^\s*\d+\.\s*(?:\[[^\]]+\]\s*)?Publish Memo\s*$/i.test(line)) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
   return c;
+}
+
+function isHitlPendingPayload(data) {
+  if (!data) return false;
+  if (data.kind === "hitl_pending" || data.pending_hitl) return true;
+  const msgs = data.history || data.messages;
+  if (Array.isArray(msgs) && msgs.length) {
+    const last = msgs[msgs.length - 1];
+    if (last?.kind === "hitl_pending") return true;
+  }
+  return false;
 }
 
 async function api(path, { method = "GET", username, body, headers, timeoutMs = FETCH_MS } = {}) {
@@ -250,13 +278,14 @@ function formatRunLogText(runLog) {
 }
 
 function applySession(setSession, data) {
-  if (!data?.history && !data?.vault && !data?.facts) return;
+  if (!data?.history && !data?.vault && !data?.facts && !data?.memos && !data?.pending_hitl) return;
   setSession((s) => ({
     ...s,
     messages: data.history ?? s?.messages,
     pending_hitl: data.pending_hitl,
     facts: data.facts ?? s?.facts,
     vault: data.vault ?? s?.vault,
+    memos: data.memos ?? s?.memos,
   }));
 }
 
@@ -306,7 +335,11 @@ export default function App() {
 
   useEffect(() => {
     if (session?.pending_hitl) setVaultOpen(true);
-  }, [session?.pending_hitl]);
+    const msgs = session?.messages;
+    if (Array.isArray(msgs) && msgs[msgs.length - 1]?.kind === "hitl_pending") {
+      setVaultOpen(true);
+    }
+  }, [session?.pending_hitl, session?.messages]);
 
   async function login(e) {
     e.preventDefault();
@@ -422,6 +455,7 @@ export default function App() {
       });
       if (hasQuestion && Array.isArray(data.logs) && data.logs.length) setRunLog(data.logs);
       applySession(setSession, data);
+      if (isHitlPendingPayload(data)) setVaultOpen(true);
       if (fileInput.current) fileInput.current.value = "";
       setFile(null);
     } catch (err) {
@@ -450,7 +484,12 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allow }),
       });
-      setSession((s) => ({ ...s, messages: data.history, pending_hitl: null }));
+      setSession((s) => ({
+        ...s,
+        messages: data.history,
+        pending_hitl: null,
+        memos: data.memos ?? s?.memos,
+      }));
     } catch (err) {
       applySession(setSession, err.data);
       setError(err.message);
@@ -560,6 +599,17 @@ export default function App() {
                 </li>
               ))}
               {!session?.facts || Object.keys(session.facts).length === 0 ? <li>No FACT# yet</li> : null}
+            </ul>
+            <h2>Memos</h2>
+            <ul className="facts memos">
+              {(session?.memos || []).map((m) => (
+                <li key={m.ts || m.title}>
+                  <code>MEMO#{m.ts}</code>
+                  <strong> {m.title}</strong>
+                  {m.body ? <pre className="memo-body">{m.body}</pre> : null}
+                </li>
+              ))}
+              {!session?.memos || session.memos.length === 0 ? <li>No MEMO# yet</li> : null}
             </ul>
             {pending && (
               <div className="hitl">

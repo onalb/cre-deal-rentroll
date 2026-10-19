@@ -242,7 +242,8 @@ def end_turn(
     if not enabled():
         return
     _safe("memory", _memory_write_turn, username, user_text, assistant_text, traces)
-    _safe("eval", _evaluate_turn, user_text, assistant_text, traces, scores)
+    # Live G/C/R stays score_gcr. AgentCore Evaluate is batch-only.
+    _ = scores
 
 
 def facts_from_memory(username: str) -> list[str]:
@@ -793,70 +794,3 @@ def _policy_status() -> dict[str, Any] | None:
         "engine": est,
         "policy": pst,
     }
-
-
-def _evaluate_turn(
-    user_text: str,
-    assistant_text: str,
-    traces: list[dict[str, Any]],
-    scores: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    judge = None if not scores else scores.get("judge")
-    if not scores or judge in {None, "", "not_run"}:
-        _emit_box("eval", "skipped", "score_gcr not run")
-        return None
-    evaluator = _env("AGENTCORE_EVALUATOR_ID")
-    if not evaluator:
-        _emit_box("eval", "skipped", "no AGENTCORE_EVALUATOR_ID")
-        return None
-    client = _client("bedrock-agentcore")
-    span_id = uuid.uuid4().hex[:16]
-    trace_id = uuid.uuid4().hex[:32]
-    session_id = f"cre-eval-{int(time.time())}"
-    start_ns = str(time.time_ns())
-    end_ns = str(time.time_ns() + 1_000_000)
-    now = datetime.now(timezone.utc).isoformat()
-    tool_names = [str(t.get("name") or "") for t in traces if t.get("name")]
-    attrs: dict[str, Any] = {
-        "input.value": (user_text or "")[:500],
-        "output.value": (assistant_text or "")[:500],
-        "gen_ai.tool.names": ",".join(tool_names),
-        "session.id": session_id,
-    }
-    if scores:
-        if scores.get("G") is not None:
-            attrs["cre.g"] = scores.get("G")
-        if scores.get("request_C") is not None:
-            attrs["cre.request_c"] = scores.get("request_C")
-        if scores.get("R") is not None:
-            attrs["cre.r"] = scores.get("R")
-    span = {
-        "name": "execute_event_loop_cycle",
-        "kind": "SPAN_KIND_INTERNAL",
-        "context": {"trace_id": trace_id, "span_id": span_id, "trace_state": "[]"},
-        "parent_id": "",
-        "start_time": now,
-        "end_time": now,
-        "startTimeUnixNano": start_ns,
-        "endTimeUnixNano": end_ns,
-        "status": {"status_code": "UNSET", "code": "STATUS_CODE_OK"},
-        "attributes": attrs,
-        "events": [],
-        "links": [],
-        "resource": {"attributes": {"service.name": "strands-agents"}},
-        "instrumentation_scope": {"name": "strands.telemetry.tracer", "version": "1.0.0"},
-        "instrumentationScope": {"name": "strands.telemetry.tracer", "version": "1.0.0"},
-        "scope": {"name": "strands.telemetry.tracer"},
-    }
-    # Builtin.Faithfulness is TRACE-level: do not pass evaluationTarget.spanIds.
-    resp = client.evaluate(
-        evaluatorId=evaluator,
-        evaluationInput={"sessionSpans": [span]},
-    )
-    if not resp:
-        raise RuntimeError(f"evaluate {evaluator} empty response")
-    err = resp.get("error") or resp.get("message")
-    if err:
-        raise RuntimeError(str(err)[:300])
-    _emit_box("eval", "ok", f"evaluate {evaluator} after score_gcr")
-    return {"evaluator": evaluator, "result": True}
