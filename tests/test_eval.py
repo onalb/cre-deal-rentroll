@@ -15,6 +15,7 @@ from cre_rentroll.eval_service import (
     has_cre_payload,
     live_judge,
     need_replan_hint,
+    prediction_clarify_draft,
     vault_calc_invented,
     vault_calc_log_label,
     vault_calc_ok,
@@ -841,6 +842,149 @@ def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert "united states" not in JUDGE_SYS.lower()
     assert "what's your name" not in JUDGE_SYS.lower()
     assert "who are you" not in JUDGE_SYS.lower()
+    assert "ask_prediction_agent" in JUDGE_SYS
+    assert "clarifying question" in JUDGE_SYS.lower()
+    assert "which group/plan/variant" in JUDGE_SYS.lower()
+    assert "clarify-from-predictor" in JUDGE_SYS.lower()
+    assert "query_units occupancy" in JUDGE_SYS.lower()
+    assert "must include occupancy % from the vault" in JUDGE_SYS.lower()
+    assert "la cordoba" not in JUDGE_SYS.lower()
+    assert "80019" not in JUDGE_SYS
+
+
+def test_predictor_clarify_draft_is_complete_not_missing_occupancy(monkeypatch):
+    q = "What occupancy do you predict?"
+    draft = (
+        "Which floor plan should I score? Pick one:\n"
+        "- Plan Alpha\n"
+        "- Plan Beta (renovated)"
+    )
+    traces = [
+        {
+            "name": "ask_prediction_agent",
+            "result": {"ok": True, "answer": draft, "source": "vacancy-prediction-agent"},
+        }
+    ]
+    roll = CanonicalRentRoll(
+        layout="one_row",
+        property_name="Hill",
+        units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
+    )
+    captured = _mock_openai(
+        monkeypatch,
+        '{"R":5,"G":5,"request_C":5,"reason":"quoted predictor clarifying question"}',
+    )
+    assert prediction_clarify_draft(draft, traces)
+    assert has_cre_payload(draft, q, traces)
+    assert not ask_is_conceptual(q)
+    hint = need_replan_hint(q, prediction_clarify=True)
+    assert "query_units occupancy" in hint.lower()
+    assert "those work tools" not in hint
+    facts = _judge_facts(roll, traces)
+    assert facts["predictor_clarify"] is True
+    assert "occupancy_pct" not in (facts["roll_abstract"] or {})
+    assert "occupancy_pct_display" not in (facts["roll_abstract"] or {})
+    assert "in_place_monthly" not in (facts["roll_abstract"] or {})
+    scores = live_judge(q, draft, roll, traces)
+    assert scores.judge == "llm"
+    assert scores.reason != "draft missing CRE payload"
+    assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
+    assert scores.vault_calc_ok is True
+    assert gate(scores, retry_used=False) == "show"
+    user = captured["kwargs"]["messages"][1]["content"]
+    assert "clarifying question" in user.lower()
+    assert "query_units occupancy" in user.lower()
+    assert "occupancy_pct_display" not in user
+
+
+def test_score_gcr_predictor_clarify_low_c_is_ok(monkeypatch):
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import record, reset_turn, set_eval_query
+
+    q = "What occupancy do you predict?"
+    draft = (
+        "Which floor plan should I score? Pick one:\n"
+        "- Plan Alpha\n"
+        "- Plan Beta (renovated)"
+    )
+    reset_turn("tester")
+    set_eval_query(q)
+    record(
+        "ask_prediction_agent",
+        {"question": q},
+        {"ok": True, "answer": draft, "source": "vacancy-prediction-agent"},
+    )
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=3,
+            G=3,
+            request_C=2,
+            vault_calc_ok=True,
+            judge="llm",
+            reason="does not predict occupancy",
+        ),
+    )
+    out = json.loads(score_gcr(draft))
+    assert out["decision"] == "ok"
+    assert out["request_C"] >= 4
+    assert out["G"] >= 4
+    assert out["vault_calc_ok"] is True
+    assert out.get("hint") == "ok to show this sentence"
+
+
+def test_harness_predictor_clarify_is_not_eval_error(monkeypatch):
+    from cre_rentroll.harness import run_task
+    from cre_rentroll.run_events import bind, reset
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import record
+
+    draft = (
+        "Which floor plan should I score? Pick one:\n"
+        "- Plan Alpha\n"
+        "- Plan Beta (renovated)"
+    )
+
+    def fake_agent(*_a, **_k):
+        record(
+            "ask_prediction_agent",
+            {"question": "What occupancy do you predict?"},
+            {"ok": True, "answer": draft, "source": "vacancy-prediction-agent"},
+        )
+        score_gcr(draft)
+        return draft
+
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=3,
+            G=3,
+            request_C=2,
+            vault_calc_ok=True,
+            judge="llm",
+            reason="does not predict occupancy",
+        ),
+    )
+    token = bind(lambda *_a, **_k: None)
+    try:
+        outcome = run_task("tester", "What occupancy do you predict?", skip_scope=True)
+    finally:
+        reset(token)
+    assert outcome.stop_reason != "eval_error"
+    assert outcome.kind != "error"
+    assert "which floor plan" in (outcome.text or "").lower()
+    assert "plan alpha" in (outcome.text or "").lower()
 
 
 def test_judge_facts_include_percent_display(monkeypatch):

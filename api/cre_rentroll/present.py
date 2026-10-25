@@ -75,6 +75,22 @@ def user_visible(raw: str) -> str:
     return s.strip() or (raw or "").strip()
 
 
+def quoted_prediction_clarification(traces: list) -> str:
+    """Vacancy MCP not-trained / which-plan text, if the Book called that tool."""
+    from cre_rentroll.predict_client import looks_like_clarification
+
+    for row in reversed(traces or []):
+        if str(row.get("name") or "") != "ask_prediction_agent":
+            continue
+        result = row.get("result")
+        if not isinstance(result, dict):
+            continue
+        answer = str(result.get("answer") or "").strip()
+        if answer and looks_like_clarification(answer):
+            return answer
+    return ""
+
+
 def _is_eval_obj(obj: object) -> bool:
     if not isinstance(obj, dict):
         return False

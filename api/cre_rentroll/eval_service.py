@@ -232,9 +232,54 @@ def ask_skips_vault_payload(query: str) -> bool:
     return ask_is_conceptual(query) or ask_is_market_area(query) or ask_is_locate(query)
 
 
-def need_replan_hint(query: str, *, vault_label: str | None = None) -> str:
+def last_prediction_clarify_answer(traces: list[dict[str, Any]] | None) -> str:
+    """Last ask_prediction_agent reply if it is a follow-up / not-trained question."""
+    from cre_rentroll.predict_client import looks_like_clarification
+
+    last: dict[str, Any] | None = None
+    for t in traces or []:
+        if str(t.get("name") or "") == "ask_prediction_agent":
+            last = t
+    if last is None:
+        return ""
+    result = last.get("result")
+    if not isinstance(result, dict):
+        return ""
+    answer = str(result.get("answer") or "").strip()
+    if answer and looks_like_clarification(answer):
+        return answer
+    return ""
+
+
+def prediction_clarify_draft(draft: str, traces: list[dict[str, Any]] | None) -> bool:
+    """True when the draft is quoting a predictor clarifying / not-trained reply."""
+    from cre_rentroll.predict_client import looks_like_clarification
+
+    tool_answer = last_prediction_clarify_answer(traces)
+    if not tool_answer:
+        return False
+    text = (draft or "").strip()
+    if len(text) < 12:
+        return False
+    if looks_like_clarification(text):
+        return True
+    a, d = tool_answer.lower(), text.lower()
+    return a[:60] in d or d[:60] in a
+
+
+def need_replan_hint(
+    query: str, *, vault_label: str | None = None, prediction_clarify: bool = False
+) -> str:
     """score_gcr / reflection hint. Definitions/comps must not grow vault calculator lists."""
-    if ask_is_conceptual(query):
+    if prediction_clarify:
+        hint = (
+            "need_replan — last ask_prediction_agent is a clarifying question "
+            "(which group/plan/variant, untrained / list trained buildings, or "
+            "need a named building). Quote that reply as the answer. Do not add "
+            "query_units occupancy or vault occupancy %. Completeness is the "
+            "follow-up, then score_gcr again"
+        )
+    elif ask_is_conceptual(query):
         hint = (
             "need_replan — last User message is a CRE definition, not this deal's "
             "location/occupancy/income/NOI/cap. Do not add vault calculators "
@@ -272,13 +317,16 @@ def need_replan_hint(query: str, *, vault_label: str | None = None) -> str:
     return hint
 
 
-def has_cre_payload(draft: str, query: str = "") -> bool:
+def has_cre_payload(
+    draft: str, query: str = "", traces: list[dict[str, Any]] | None = None
+) -> bool:
     """True when the draft has CRE JSON/prose to judge — empty is not a payload.
 
     Conceptual CRE asks (what is a rent roll) need an explanation, not occupancy %
     or income. Area/market facts (demographics, hazards, comps) need a cited figure
     or search hits — not occupancy/units/this-roll JSON. Numeric occupancy-on-this-roll
-    still needs vault JSON keys or cited numbers.
+    still needs vault JSON keys or cited numbers. A predictor clarifying question
+    (which group/plan/variant, untrained list) is payload without occupancy %.
     """
     from cre_rentroll.scope import is_refuse_draft
 
@@ -287,6 +335,8 @@ def has_cre_payload(draft: str, query: str = "") -> bool:
         return False
     if is_refuse_draft(text):
         return False
+    if prediction_clarify_draft(text, traces):
+        return True
     if ask_skips_vault_payload(query):
         return len(text) >= 12
     low = text.lower()
@@ -562,12 +612,14 @@ JUDGE_SYS = """You are a CRE rent-roll eval judge. Score integers 1-5. Return JS
 R (relevance): Is the answer on-topic for this user question? High if it addresses the CRE ask. High if the user asked identity, greetings, weather, sports, recipes, or other non-deal chat and the answer is the rent-roll-only refuse. Low (1-2) if a CRE ask gets off-topic chatter, or if a non-deal ask gets a CRE/tool answer instead of the refuse.
 - Any in-scope area/market question (demographics, hazards, comps, average property value, listings) is on-topic CRE. High R if the answer cites search hits or a stated area/market figure. Citations/search hits are the payload. Do not score R=1 as off-topic / "not a rent-roll question" for omitting occupancy, units, this-roll payload, or a rent-roll definition. Listing URLs are allowed.
 - Locate / map / where is this property / the user correcting the last geocode's country or place / search the map again is on-topic locate for THIS deal. High R if the answer cites osm_geocode, search hits, or FACT# street. Do not score R=1 as off-topic / "not a rent-roll question".
+- If the last ask_prediction_agent tool JSON is a clarifying question (which group/plan/variant; untrained / list trained buildings; need a named building), quoting that reply is on-topic for THIS turn. High R. Do not low-R because the user asked occupancy and the answer lists plans instead of a predicted rate.
 
 G (groundedness): Are numeric and factual claims supported by VAULT / tools / FACT# / RollAbstract numbers, or by arithmetic from those plus rents the USER stated in QUERY?
 - Identity, greetings, weather, or other non-deal chat: the rent-roll-only refuse is grounded. Do not low-G it for omitting vault numbers.
 - Conceptual / definitional CRE (what is a rent roll, occupancy, NOI): an on-topic explanation grounded in search hits / FACT# / tools is grounded. Do not low-G for omitting occupancy %, income, unit counts, or other vault numbers when the user did not ask for this deal's figures.
 - Area/market facts (demographics, hazards, comps, average property value): a cited figure and search-hit / FACT# / tool citations are grounded. Do not low-G or G=1 "not a rent-roll question" for omitting occupancy %, income, unit counts, or this-roll vault numbers. Do not require occupancy numbers.
 - Locate / map / last-pin country or place correction: a cited osm_geocode / search-hit / FACT# street (display_name, lat, lon) is grounded. Do not low-G or G=1 "not a rent-roll question" / off-topic for omitting occupancy %, income, unit counts, or this-roll occupancy payload. Do not require occupancy numbers.
+- Predictor clarifying question (tool JSON is which group/plan/variant, untrained / list trained buildings, or need a named building): quoting that tool reply is grounded. Do not low-G for omitting occupancy_pct / in_place_monthly. Do not treat query_units occupancy as the required grounding.
 - Rate fraction vs percent is the SAME figure: occupancy_pct 0.9207 and 92.07%, implied_cap 0.2908 and 29.08% (also 29.1% or 29%) are both grounded. Do not lower G for converting 0.080 ↔ 8.0%, 0.9207 ↔ 92.07%, or rounding a displayed percent. Distinct rates (8% vs 29%) are not the same figure.
 - If the user asked only for vacant count (vacant-only), do not lower G for omitting occupancy, income, NOI, or unit mix.
 - User-stated scenario rents (e.g. vacant units at $5,000/month) are grounded in QUERY. vacant_count × that rent × 12, and in_place_annual + that fill, are grounded. Do not low-G a full-occupancy total for including occupied in-place.
@@ -578,6 +630,7 @@ C (request completeness — not gold.json): Did the answer cover what was asked 
 - Conceptual / definitional CRE: a correct cited explanation is complete. Do not require vault occupancy/income/unit figures on those asks.
 - Area/market facts: a cited figure and/or search hits / listing links is complete. Do not require occupancy/units/this-roll payload or a rent-roll definition. Do not fail C as "not a rent-roll question".
 - Locate / map / last-pin country or place correction: a cited geocode/map sentence is complete. Do not require occupancy/units/this-roll payload or a rent-roll definition. Do not fail C as "not a rent-roll question".
+- Predictor clarifying question: if the last ask_prediction_agent result is a clarifying question (which group/plan/variant; untrained / list trained buildings; need a named building), that quoted reply IS a complete, relevant, grounded answer for THIS user turn. Completeness is not "must include occupancy % from the vault". Do not ding C for omitting occupancy_pct / in_place_monthly. Do not treat "user asked occupancy, model listed plans" as incomplete when the tool JSON is a clarify-from-predictor. Do not suggest substituting query_units occupancy.
 - Vacant-only questions do NOT require occupancy %, income, geocode, or NOI.
 - Occupied-only in-place monthly is not 100% occupancy / all-units-occupied / no-vacant income. Repeating in_place_monthly when the user asked for full occupancy (or said the dollar figure is the same as with vacancy) is low C. Occupancy counts are not a substitute for that income estimate.
 - If the user asked income if ALL units are occupied and gave a fill rent for vacant units, the complete figure is occupied in-place plus vacant fill (annualize if they asked annual). Do not fail C for reporting that total. Do not treat vacant-fill-only ($780k) as the whole ask unless they asked only for the vacant increment.
@@ -649,6 +702,17 @@ def _judge_facts(roll: CanonicalRentRoll | None, traces: list[dict[str, Any]]) -
         name = str(t.get("name") or "")
         facts["tools"].append({"name": name, "result": _compact_tool_result(name, t.get("result"))})
     facts["fact_slots"] = _ltm_facts()
+    if last_prediction_clarify_answer(traces):
+        facts["predictor_clarify"] = True
+        abstract = facts.get("roll_abstract")
+        if isinstance(abstract, dict):
+            for key in ("occupancy_pct", "occupancy_pct_display", "in_place_monthly"):
+                abstract.pop(key, None)
+        facts["completeness"] = (
+            "Last ask_prediction_agent is a clarifying question. That quoted reply "
+            "completes THIS turn. Do not require occupancy_pct or in_place_monthly. "
+            "Do not substitute query_units occupancy."
+        )
     return facts
 
 
@@ -701,9 +765,10 @@ def live_judge(query: str, answer: str, roll: CanonicalRentRoll | None, traces: 
     """
     from cre_rentroll.settings import openai_api_key
 
-    if not has_cre_payload(answer, query):
+    if not has_cre_payload(answer, query, traces):
         # Numeric occupancy-on-this-roll with no vault figures — G/C/R stay N/A.
-        # Conceptual CRE and area/market-fact drafts are payload without occupancy %.
+        # Conceptual CRE, area/market-fact, and predictor-clarify drafts are
+        # payload without occupancy %.
         return EvalScores(judge="empty", reason="draft missing CRE payload")
     ok = vault_calc_ok(answer, roll, traces)
     if not openai_api_key():
@@ -724,8 +789,16 @@ def _llm_scores(
 
     client = OpenAI(**openai_client_args())
     facts = _judge_facts(roll, traces)
+    note = ""
+    if facts.get("predictor_clarify"):
+        note = (
+            "NOTE: Last ask_prediction_agent is a clarifying question. Score the "
+            "quoted reply as complete, relevant, and grounded for THIS turn. Do not "
+            "require occupancy_pct or in_place_monthly. Do not substitute query_units "
+            "occupancy.\n"
+        )
     user = (
-        f"QUERY: {query}\nANSWER: {answer}\nFACTS: {json.dumps(facts, default=str)[:8000]}"
+        f"{note}QUERY: {query}\nANSWER: {answer}\nFACTS: {json.dumps(facts, default=str)[:8000]}"
     )
     resp = client.chat.completions.create(
         model=openai_classify_model(),

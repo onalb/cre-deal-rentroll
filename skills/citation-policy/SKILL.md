@@ -9,6 +9,7 @@ description: Cite vault spans, this-turn compute_* JSON, OSM, and search URLs. N
 - Ground average / typical unit size in this-turn `query_units` `avg_sqft`. Do not hand-sum or hand-average the units grid. Do not say the rent roll does not specify square footage when `avg_sqft` is present.
 - Occupied-only `in_place_monthly` is not 100% occupancy income. Ground a full-occupancy estimate in `compute_income` `estimated_full_occupancy_monthly` (or mean occupied rent × unit count from that JSON).
 - Cite the rent-roll report date (as-of) when stating occupancy or income.
+- If the last `ask_prediction_agent` result is a clarifying question (which group/plan/variant, untrained / list trained buildings, or need a named building), quoting that tool reply is the complete, grounded answer for this turn. Do not require occupancy_pct / in_place_monthly citations, and do not substitute `query_units` occupancy.
 - Ground maps in OSM `display_name` / lat / lon.
 - Ground market claims in `web_search` hrefs.
 - Never put the full unit grid or PII in the answer or in TRACE previews.

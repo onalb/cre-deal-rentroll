@@ -18,6 +18,7 @@ from cre_rentroll.present import (
     last_drafted_memo,
     last_scored_prose,
     leaked_publish_memo_args,
+    quoted_prediction_clarification,
     scope_fail_chat,
     strip_operator_echo,
     user_visible,
@@ -254,9 +255,11 @@ def run_task(
             begin_turn(username)
         except Exception:
             pass
-        names = filter_book_tools(BOOK.tool_names, chip_id, shown_user)
+        names = filter_book_tools(
+            BOOK.tool_names, chip_id, shown_user, username=username
+        )
         skills = BOOK.skills
-        if allow_predict(chip_id, shown_user):
+        if allow_predict(chip_id, shown_user, username=username):
             skills = (*skills, "rr-predict")
         inv = Inventory(BOOK.name, names, skills)
     else:
@@ -265,7 +268,7 @@ def run_task(
         inv = Inventory(BOOK.name, (), ())
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
-    predict_on = cre_ask and allow_predict(chip_id, shown_user)
+    predict_on = cre_ask and allow_predict(chip_id, shown_user, username=username)
     emit(
         "inventory",
         (
@@ -281,7 +284,7 @@ def run_task(
         emit("skills", f"attached {', '.join(inv.skills)}", skills=list(inv.skills))
     if cre_ask:
         facts = _facts_for_agent(username, has_vault)
-        steer = chip_prompt(chip_id, shown_user)
+        steer = chip_prompt(chip_id, shown_user, username=username)
         if steer:
             facts = steer + "\n" + facts
     elif has_vault:
@@ -402,6 +405,9 @@ def _recover_leaked_publish_memo(
 
 def _user_facing_draft(draft: str, traces: list[dict[str, Any]]) -> str:
     """Do not show ReAct operator hints / checklists / score_gcr JSON as the answer."""
+    quoted = quoted_prediction_clarification(traces)
+    if quoted:
+        return quoted
     prose = answer_prose(draft)
     cleaned = strip_operator_echo(prose)
     if cleaned and not is_operator_leak(cleaned):
@@ -499,6 +505,9 @@ def _eval_and_stop(
         and cited_locate_map_draft(query_text, show, traces)
     ):
         decision = "show"
+    if decision == "error" and quoted_prediction_clarification(traces) and not empty:
+        decision = "show"
+        show = prose
     if decision == "error":
         stop = "eval_error"
         kind = "error"

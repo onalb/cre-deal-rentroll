@@ -20,15 +20,7 @@ export const DEMO_CHIPS = [
     level: "predict-ok",
     label: "Predict occupancy",
     searchFail: false,
-    prompt: "What occupancy do you predict for {property_name} as of {as_of}?",
-  },
-  {
-    id: "predict",
-    level: "predict",
-    label: "Predict occupancy (full)",
-    searchFail: false,
-    prompt:
-      "Over the next 12 months, how many units expire or are MTM, what income is at risk, and what occupancy do you predict for {property_name}? Do not request a rent roll file.",
+    prompt: "What occupancy do you predict for {property_name}?",
   },
   {
     id: "multi-1",
@@ -89,6 +81,14 @@ export const DEMO_CHIPS = [
     searchFail: true,
     prompt:
       "What are recent multifamily cap rates or sales in this property's metro?",
+  },
+  {
+    id: "predict",
+    level: "predict",
+    label: "Predict occupancy (full)",
+    searchFail: false,
+    prompt:
+      "Over the next 12 months, how many units expire or are MTM, what income is at risk, and what occupancy do you predict for {property_name}? Do not request a rent roll file.",
   },
   {
     id: "weather",

@@ -1,5 +1,6 @@
 from cre_rentroll.harness import run_task
 from cre_rentroll.run_events import (
+    _prose_for_run_log,
     emit,
     emit_stop_and_summary,
     tool_message,
@@ -189,6 +190,36 @@ def test_tool_message_summarizes_without_grid():
     )
     assert analysis.strip() in ref
     assert "…" not in ref
+    predict = (
+        "To provide the requested information about **La Cordoba**: 1. **Units Expiring** "
+        "I don't have access to specific lease expiration dates for each unit in La Cordoba. "
+        "Please name a floor plan if you want a forecast."
+    )
+    assert len(predict) > 160
+    pred = tool_message(
+        "ask_prediction_agent",
+        {"question": "units expiring at La Cordoba"},
+        {"ok": True, "answer": predict, "source": "vacancy-prediction-agent"},
+    )
+    assert pred == f"ask_prediction_agent (MCP) → {predict}"
+    assert "…" not in pred
+    para = "First sentence stays.\n\nSecond paragraph is the rest of the forecast."
+    wrapped = tool_message(
+        "ask_prediction_agent",
+        {"question": "forecast"},
+        {"ok": True, "answer": para},
+    )
+    assert para in wrapped
+    assert "\n\n" in wrapped
+    clipped = _prose_for_run_log(
+        "Alpha sentence one is longer than before. "
+        "Beta sentence two is also a full sentence. " + ("gamma " * 80),
+        cap=120,
+    )
+    assert clipped.endswith("…")
+    assert clipped.startswith("Alpha sentence one is longer than before.")
+    assert "Beta sentence two is also a full sentence." in clipped
+    assert "gamma" not in clipped
 
 
 def test_emit_skills_attached_is_not_llm_or_tool():

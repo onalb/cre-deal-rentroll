@@ -321,6 +321,27 @@ def _query_units_log(shown: str, args: dict[str, Any], r: dict[str, Any]) -> str
     return f"{prefix} → {', '.join(parts)}" if parts else prefix
 
 
+# UI Run log: keep predictor prose intact. Only clip pathological blobs, and
+# never in the middle of a sentence.
+_PROSE_LOG_MAX = 50_000
+
+
+def _prose_for_run_log(text: str, *, cap: int = _PROSE_LOG_MAX) -> str:
+    body = str(text or "").strip()
+    if not body or len(body) <= cap:
+        return body
+    cut = body[:cap]
+    para = cut.rfind("\n\n")
+    if para >= cap // 2:
+        return cut[:para].rstrip() + "…"
+    for sep in (". ", "! ", "? ", ".\n", "!\n", "?\n", "\n"):
+        idx = cut.rfind(sep)
+        if idx >= cap // 2:
+            end = idx + (1 if sep.startswith((".", "!", "?")) else 0)
+            return cut[:end].rstrip() + "…"
+    return cut.rstrip() + "…"
+
+
 def tool_message(name: str, args: dict[str, Any], result: Any) -> str:
     r = result if isinstance(result, dict) else {}
     shown = labeled(name)
@@ -343,11 +364,10 @@ def tool_message(name: str, args: dict[str, Any], result: Any) -> str:
         return f"{shown} → vacancy agent scored {len(plans)} floor plans"
     if name == "ask_prediction_agent":
         if r.get("ok") is False:
-            return f"{shown} failed: {r.get('error')}"
-        preview = re.sub(r"\s+", " ", str(r.get("answer") or "")).strip()
-        if len(preview) > 160:
-            preview = preview[:157] + "…"
-        return f"{shown} → {preview}" if preview else f"{shown} → prediction agent"
+            err = _prose_for_run_log(r.get("error") or "failed")
+            return f"{shown} failed: {err}"
+        answer = _prose_for_run_log(r.get("answer") or "")
+        return f"{shown} → {answer}" if answer else f"{shown} → prediction agent"
     if name == "osm_geocode":
         if r.get("ok"):
             return f"{shown} → {r.get('display_name')}"

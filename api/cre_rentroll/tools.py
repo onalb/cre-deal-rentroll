@@ -1320,6 +1320,11 @@ def score_gcr(draft: str) -> str:
     occupancy numbers. Locate / map / last-pin country or place correction is
     on-topic locate: a cited osm_geocode/map sentence is the payload — do not
     score G=1 off-topic or hide it. Do not require occupancy numbers.
+    If the last ask_prediction_agent result is a clarifying question (which
+    group/plan/variant, untrained / list trained buildings, or need a named
+    building), quoting that reply is the complete payload for THIS turn — do
+    not ding C for omitting occupancy_pct / in_place_monthly, and do not
+    substitute query_units occupancy.
     vault_calc N/A (a cited
     number not in the vault allowlist, including derived math) is not a fail. Conceptual
     CRE definitions and area/market drafts do not need occupancy/income/unit figures. Do not return to the user
@@ -1332,6 +1337,7 @@ def score_gcr(draft: str) -> str:
     from cre_rentroll.eval_service import (
         live_judge,
         need_replan_hint,
+        prediction_clarify_draft,
         vault_calc_invented_hits,
         vault_calc_log_label,
     )
@@ -1350,6 +1356,14 @@ def score_gcr(draft: str) -> str:
     scores = live_judge(query, text, roll, traces)
     if scores.judge == "llm":
         turn_ctx.add_llm_if_unchanged("judge", before)
+    clarify = prediction_clarify_draft(text, traces)
+    if clarify and scores.judge == "llm":
+        if isinstance(scores.request_C, int):
+            scores.request_C = max(scores.request_C, 4)
+        if isinstance(scores.G, int):
+            scores.G = max(scores.G, 4)
+        if isinstance(scores.R, int):
+            scores.R = max(scores.R, 4)
     g = scores.G or 0
     c = scores.request_C or 0
     hits = (
@@ -1363,10 +1377,14 @@ def score_gcr(draft: str) -> str:
     turn_ctx.set_eval_scores(scores)
     if scores.judge in {"error", "empty"}:
         decision = "need_replan"
-        hint = need_replan_hint(query, vault_label=None)
+        hint = need_replan_hint(query, vault_label=None, prediction_clarify=clarify)
     elif scores.vault_calc_ok is False or min(g, c) <= 2:
         decision = "need_replan"
-        hint = need_replan_hint(query, vault_label=vault_label if invented else None)
+        hint = need_replan_hint(
+            query,
+            vault_label=vault_label if invented else None,
+            prediction_clarify=clarify,
+        )
     else:
         decision = "ok"
         hint = "ok to show this sentence"
@@ -1428,19 +1446,34 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
 
     When: forecast occupancy, lease expirations, MTM waterfall, rollover,
     loss-to-lease, or predicted income. Also when the Predict occupancy chip
-    is on and the last message is forward-looking.
+    is on and the last message is forward-looking. Also when THIS message is
+    a plan name or renovated yes/no after that agent asked which group.
     When not: current occupancy or in-place rent (query_units / compute_income),
     floor-plan vacant probability (ask_vacancy_agent — in-process logistic,
     not vacancy MCP ask_vacancy), map, weather.
     How: MCP streamable HTTP {RR_PREDICT_URL}/mcp tool ask_vacancy with
-    {question, session_id} (session reuse). The question names the vault
-    property and book snapshot; never /api/chat, never upload or train.
-    If :8000 has no fit, surface that answer.
+    {question, session_id} (session reuse per username). First call forwards
+    THIS user question plus do not parse/train — do not invent a building.
+    A later-turn follow-up sends the user's short reply. Never /api/chat,
+    never upload or train. If :8000 has no fit or asks which plan, return
+    that text so the Book can quote it and stop this turn — do not score
+    the vault roll and do not call again with a guessed plan.
     """
-    from cre_rentroll.predict_client import forecast, vault_facts
+    from cre_rentroll.predict_client import forecast, this_turn_clarify_result, vault_facts
+
+    prior = this_turn_clarify_result()
+    if prior:
+        payload = {
+            "ok": True,
+            "source": "vacancy-prediction-agent",
+            "answer": str(prior.get("answer") or "").strip(),
+            "same_turn_stop": True,
+        }
+        return json.dumps(payload)
 
     user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
     months = int(horizon_months or 12)
+    asked = (question or "").strip() or (turn_ctx.eval_query() or "").strip()
     ctx = None
     try:
         roll = _roll()
@@ -1448,12 +1481,12 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
     except Exception:
         ctx = None
     try:
-        result = forecast(user, question or "", horizon_months=months, vault=ctx)
+        result = forecast(user, asked, horizon_months=months, vault=ctx)
     except Exception as exc:  # noqa: BLE001 — surface a tool error, do not crash the turn
         result = {"ok": False, "error": str(exc), "source": "vacancy-prediction-agent"}
     turn_ctx.record(
         "ask_prediction_agent",
-        {"horizon_months": months, "question": question},
+        {"horizon_months": months, "question": asked},
         result,
     )
     return json.dumps(result)

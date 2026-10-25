@@ -213,6 +213,15 @@ def system_prompt(inv: Inventory, facts: str) -> str:
             "12-month occupancy / expirations / MTM waterfall / loss-to-lease / "
             "predicted occupancy → one ask_prediction_agent (live vacancy agent on :8000), "
             "not query_units and not ask_vacancy_agent; "
+            "if that tool says the building is not trained or asks which floor plan "
+            "(bullet list of plans, no probabilities), quote that as the user answer "
+            "and STOP — do not call ask_prediction_agent again this turn with a "
+            "guessed plan or property; that follow-up is complete for this turn; "
+            "score_gcr it; never occupancy from the vault roll or query_units; "
+            "never pick a property or floor plan the user did not write in THIS "
+            "user message (do not substitute a vault name or a trained-list name); "
+            "a later user message that is only a plan name or renovated yes/no → "
+            "ask_prediction_agent again with that user text (same MCP session); "
             if "ask_prediction_agent" in inv.tool_names
             else ""
         )
@@ -978,10 +987,29 @@ def _run_openai_tools_loop(
                 "tool_calls": [tc.model_dump() for tc in msg.tool_calls],
             }
         )
+        from cre_rentroll.present import quoted_prediction_clarification
+
         for tc in msg.tool_calls:
             name = tc.function.name
             args = json.loads(tc.function.arguments or "{}")
             impl = impls.get(name)
+            if name == "ask_prediction_agent":
+                quoted = quoted_prediction_clarification(turn_ctx.traces())
+                if quoted:
+                    payload = {
+                        "ok": True,
+                        "answer": quoted,
+                        "source": "vacancy-prediction-agent",
+                        "same_turn_stop": True,
+                    }
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(payload),
+                        }
+                    )
+                    continue
             if impl is None:
                 payload = {"ok": False, "error": "tool not bound"}
                 turn_ctx.record(name, args, payload)
@@ -1005,6 +1033,10 @@ def _run_openai_tools_loop(
                     turn_ctx.record(name, args, payload)
                 out = json.dumps(payload)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(out)})
+        quoted = quoted_prediction_clarification(turn_ctx.traces())
+        if quoted:
+            react_text = quoted
+            break
     else:
         react_text = "Stopped: max_steps (12)."
     return react_text
@@ -1184,8 +1216,12 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                     "type": "string",
                     "description": (
                         "Forward-looking occupancy / expirations / MTM / loss-to-lease "
-                        "question. Name the vault property. The tool adds book snapshot "
-                        "and tells :8000 not to parse a rent roll. Not current-book occupancy."
+                        "question, or a short follow-up (plan name, renovated yes/no) after "
+                        "the agent asked which group on a prior user turn. Pass THIS user "
+                        "question; do not invent a building or floor plan they did not write. "
+                        "If the tool asks which plan/group/building or lists trained "
+                        "properties, quote that reply and do not call again this turn. "
+                        "Not current-book occupancy."
                     ),
                 },
             },

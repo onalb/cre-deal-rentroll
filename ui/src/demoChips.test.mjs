@@ -6,7 +6,6 @@ const ids = DEMO_CHIPS.map((c) => c.id);
 assert.deepEqual(ids, [
   "abstract",
   "predict_occupancy_only",
-  "predict",
   "multi-1",
   "multi-2",
   "multi-3",
@@ -15,6 +14,7 @@ assert.deepEqual(ids, [
   "underwrite",
   "buy",
   "search-down",
+  "predict",
   "weather",
 ]);
 
@@ -54,6 +54,7 @@ assert.match(predict.prompt, /occupancy/i);
 assert.match(predict.prompt, /expire|MTM/i);
 assert.match(predict.prompt, /income is at risk/i);
 assert.match(predict.prompt, /\{property_name\}/);
+assert.doesNotMatch(predict.prompt, /as of|\{as_of\}/i);
 assert.match(predict.prompt, /Do not request a rent roll file/i);
 assert.equal(predict.searchFail, false);
 
@@ -62,12 +63,13 @@ assert.equal(predictOnly.label, "Predict occupancy");
 assert.equal(predictOnly.level, "predict-ok");
 assert.equal(
   predictOnly.prompt,
-  "What occupancy do you predict for {property_name} as of {as_of}?",
+  "What occupancy do you predict for {property_name}?",
 );
+assert.doesNotMatch(predictOnly.prompt, /as of/i);
 assert.doesNotMatch(predictOnly.prompt, /expir|MTM|income at risk|loss-to-lease/i);
 assert.equal(
   fillChipPrompt(predictOnly.prompt, { property_name: "La Cordoba", as_of: "2024-06-01" }),
-  "What occupancy do you predict for La Cordoba as of 2024-06-01?",
+  "What occupancy do you predict for La Cordoba?",
 );
 assert.equal(predictOnly.searchFail, false);
 
