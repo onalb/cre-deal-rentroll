@@ -5,8 +5,14 @@ import pytest
 
 from cre_rentroll.agents import BOOK
 from cre_rentroll.mcp_runtime import VAULT_MCP, mcp_server_for
-from cre_rentroll.predict_client import forecast, reset_predict_state
+from cre_rentroll.predict_client import (
+    build_forecast_question,
+    forecast,
+    reset_predict_state,
+)
+from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
 from cre_rentroll.tools import TOOL_IMPLS, ask_prediction_agent
+from cre_rentroll.turn_ctx import reset_turn
 
 
 def test_prediction_tool_is_on_the_book_menu():
@@ -25,7 +31,7 @@ def test_ask_prediction_agent_calls_http(monkeypatch):
     )
     monkeypatch.setattr(
         "cre_rentroll.predict_client.forecast",
-        lambda user, question, horizon_months=12: {
+        lambda user, question, horizon_months=12, vault=None: {
             "ok": True,
             "source": "vacancy-prediction-agent",
             "answer": "12 expirations",
@@ -103,7 +109,19 @@ def test_forecast_posts_mcp_ask_vacancy_not_chat(monkeypatch):
         return client
 
     monkeypatch.setattr(httpx, "Client", factory)
-    result = forecast("tester", "what occupancy do you predict?", horizon_months=12)
+    result = forecast(
+        "tester",
+        "what occupancy do you predict?",
+        horizon_months=12,
+        vault={
+            "property_name": "La Cordoba",
+            "as_of": "2024-06-01",
+            "unit_count": 164,
+            "occupancy_pct": 0.9207,
+            "vacant_count": 13,
+            "floor_plans": ["1x1 B", "2x2 A"],
+        },
+    )
     assert result["ok"] is True
     assert result["answer"] == "building not trained"
     assert "train" not in result
@@ -115,10 +133,13 @@ def test_forecast_posts_mcp_ask_vacancy_not_chat(monkeypatch):
     payload = call["json"]["params"]
     assert payload["name"] == "ask_vacancy"
     args = payload["arguments"]
-    assert args["question"] == "what occupancy do you predict?"
+    question = args["question"]
+    assert "La Cordoba" in question
+    assert "do not parse" in question.lower()
+    assert "What occupancy do you predict for La Cordoba as of 2024-06-01?" in question
     assert args["session_id"]
-    assert "file_id" not in args["question"]
-    assert "Train this rent roll" not in args["question"]
+    assert "file_id" not in question
+    assert "Train this rent roll" not in question
 
 
 def test_forecast_reuses_session_id(monkeypatch):
@@ -158,3 +179,58 @@ def test_forecast_raises_on_http_error(monkeypatch):
     monkeypatch.setattr(httpx, "Client", lambda *a, **k: FailClient())
     with pytest.raises(RuntimeError):
         forecast("tester", "what occupancy do you predict?")
+
+
+def test_forecast_message_contains_property_name_and_do_not_parse():
+    text = build_forecast_question(
+        "What occupancy do you predict?",
+        vault={
+            "property_name": "La Cordoba",
+            "as_of": "2024-06-01",
+            "unit_count": 164,
+            "occupancy_pct": 0.9207,
+            "vacant_count": 13,
+            "floor_plans": ["1x1 B", "2x2 A"],
+        },
+    )
+    assert "La Cordoba" in text
+    assert "do not parse" in text.lower()
+    assert "What occupancy do you predict for La Cordoba as of 2024-06-01?" in text
+    assert "unit_count=164" in text
+
+
+def test_full_forecast_question_names_property_and_skips_parse():
+    text = build_forecast_question(
+        "Over the next 12 months, how many units expire or are MTM, what income is at risk, and what occupancy do you predict?",
+        vault={"property_name": "La Cordoba", "as_of": "2024-06-01", "unit_count": 10, "occupancy_pct": 0.9, "vacant_count": 1},
+    )
+    assert "La Cordoba" in text
+    assert "do not parse" in text.lower()
+    assert "Do not request a rent roll file" in text
+    assert "expire" in text.lower()
+
+
+def test_ask_prediction_agent_prompt_includes_vault_name(monkeypatch):
+    reset_turn("tester")
+    roll = CanonicalRentRoll(
+        layout="one_row",
+        property_name="La Cordoba",
+        as_of="2024-06-01",
+        units=[
+            UnitRow(unit_id="1", unit_type="1x1 B", in_place_rent=1000, vacant=False),
+            UnitRow(unit_id="2", unit_type="2x2 A", in_place_rent=0, vacant=True),
+        ],
+    )
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
+    monkeypatch.setattr("cre_rentroll.tools.turn_ctx.record", lambda *a, **k: None)
+    captured = {}
+
+    def fake_forecast(user, question, horizon_months=12, vault=None):
+        captured.update(question=question, vault=vault, user=user)
+        return {"ok": True, "source": "vacancy-prediction-agent", "answer": "which plan?"}
+
+    monkeypatch.setattr("cre_rentroll.predict_client.forecast", fake_forecast)
+    payload = json.loads(ask_prediction_agent(12, "What occupancy do you predict?"))
+    assert captured["vault"]["property_name"] == "La Cordoba"
+    assert captured["question"] == "What occupancy do you predict?"
+    assert payload["answer"] == "which plan?"

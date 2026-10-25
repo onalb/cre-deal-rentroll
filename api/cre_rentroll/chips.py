@@ -6,11 +6,14 @@ import re
 
 PREDICT_TOOL = "ask_prediction_agent"
 PREDICT_CHIP = "predict"
+PREDICT_ONLY_CHIP = "predict_occupancy_only"
+PREDICT_CHIPS = frozenset({PREDICT_CHIP, PREDICT_ONLY_CHIP})
 
 # Current-book, geocode, weather, and other demo chips hide prediction.
 _CHIP_ALLOW_PREDICT = {
     "abstract": False,
     "predict": True,
+    "predict_occupancy_only": True,
     "multi-1": False,
     "multi-2": False,
     "multi-3": False,
@@ -37,15 +40,30 @@ _FORWARD_RE = re.compile(
 )
 
 PREDICT_CHIP_HINT = (
-    "The user selected the Predict occupancy chip. If THIS last message is "
+    "The user selected the Predict occupancy (full) chip. If THIS last message is "
     "forward-looking (forecast occupancy, expirations, MTM waterfall, rollover, "
     "loss-to-lease, predicted income), you SHOULD call ask_prediction_agent "
     "(MCP /mcp ask_vacancy on RR_PREDICT_URL, default http://127.0.0.1:8000). "
-    "Rentroll does not upload or train that agent — training is only via the "
-    "vacancy-agent UI. Cite its reply even if the building is not trained. "
+    "Pass the vault property name in the question. Rentroll does not upload "
+    "or train that agent — training is only via the vacancy-agent UI. Cite "
+    "its reply even if the building is not trained or it asks which floor plan. "
     "Do not force the call for a current-book rent lookup. Do not use "
     "query_units or ask_vacancy_agent for that forecast. Skip prediction for "
     "geocode, weather, or today's occupancy/income."
+)
+
+PREDICT_ONLY_CHIP_HINT = (
+    "The user selected the occupancy-only Predict occupancy chip. If THIS last "
+    "message is forward occupancy, you SHOULD call ask_prediction_agent "
+    "(MCP /mcp ask_vacancy on RR_PREDICT_URL, default http://127.0.0.1:8000). "
+    "Answer occupancy only — do not expand into expirations, MTM waterfall, "
+    "loss-to-lease, or predicted income unless occupancy itself. Ask predicted "
+    "occupancy for the vault property_name as of as_of. Rentroll does "
+    "not upload or train that agent — training is only via the vacancy-agent UI. "
+    "Cite its reply even if the building is not trained or it asks which floor plan. "
+    "Do not force the call for a current-book rent lookup. Do not use "
+    "query_units or ask_vacancy_agent for that forecast. Skip prediction for "
+    "geocode, weather, or today's occupancy."
 )
 
 
@@ -71,9 +89,12 @@ FORWARD_HINT = (
 
 
 def chip_prompt(chip_id: str = "", message: str = "") -> str:
-    if (chip_id or "").strip() == PREDICT_CHIP:
+    cid = (chip_id or "").strip()
+    if cid == PREDICT_CHIP:
         return PREDICT_CHIP_HINT
-    if not (chip_id or "").strip() and is_forward_looking(message):
+    if cid == PREDICT_ONLY_CHIP:
+        return PREDICT_ONLY_CHIP_HINT
+    if not cid and is_forward_looking(message):
         return FORWARD_HINT
     return ""
 

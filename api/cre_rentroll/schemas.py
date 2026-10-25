@@ -60,6 +60,14 @@ class UnitRow(BaseModel):
         return self.vacant
 
 
+def mean_positive_sqft(units: list[UnitRow]) -> float | None:
+    """Mean sqft of units with sqft > 0. None when the roll has no sizes."""
+    vals = [float(u.sqft) for u in units if u.sqft is not None and float(u.sqft) > 0]
+    if not vals:
+        return None
+    return round(sum(vals) / len(vals), 2)
+
+
 class CanonicalRentRoll(BaseModel):
     property_name: str | None = None
     as_of: str | None = None
@@ -72,6 +80,14 @@ class CanonicalRentRoll(BaseModel):
     @property
     def unit_count(self) -> int:
         return len(self.units)
+
+    @property
+    def avg_sqft(self) -> float | None:
+        return mean_positive_sqft(self.units)
+
+    @property
+    def sqft_n(self) -> int:
+        return sum(1 for u in self.units if u.sqft is not None and float(u.sqft) > 0)
 
     def vacant_count_on(self, as_of: str | date | None = None) -> int:
         return sum(1 for u in self.units if u.vacant_on(as_of or self.as_of))
@@ -117,6 +133,8 @@ class CanonicalRentRoll(BaseModel):
             str(self.occupied_count),
             f"{self.occupancy_pct:.4f}",
         ]
+        if self.avg_sqft is not None:
+            spans.append(str(self.avg_sqft))
         if self.property_name:
             spans.append(self.property_name)
         if self.as_of:

@@ -10,10 +10,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from typing import Any
 
 import httpx
+
+_OCCUPANCY_ONLY_RE = re.compile(
+    r"^what occupancy do you predict(?:\s+for\s+.+?)?(?:\s+as of\s+.+?)?\??$",
+    re.I,
+)
 
 _state: dict[str, dict[str, Any]] = {}
 
@@ -164,10 +170,102 @@ def chat(username: str, message: str, timeout: float = 180.0) -> dict:
     return {"message": answer, "done": result, "session_id": state["session_id"]}
 
 
-def forecast(username: str, question: str, horizon_months: int = 12) -> dict:
-    prompt = (question or "").strip() or (
-        f"Over the next {horizon_months} months, how many units expire or are MTM, "
-        "what monthly income is at risk, and what occupancy do you predict?"
+def vault_facts(roll: Any, as_of: str | None = None) -> dict[str, Any]:
+    """Book facts for the MCP question. Never a file upload."""
+    as_of = as_of or getattr(roll, "as_of", None)
+    plans: list[str] = []
+    seen: set[str] = set()
+    for unit in getattr(roll, "units", None) or []:
+        name = (getattr(unit, "unit_type", None) or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            plans.append(name)
+    property_name = (
+        (getattr(roll, "property_name", None) or "").strip()
+        or (getattr(roll, "source_filename", None) or "").strip()
+        or "this property"
+    )
+    unit_count = int(getattr(roll, "unit_count", 0) or 0)
+    occ_fn = getattr(roll, "occupancy_pct_on", None)
+    vacant_fn = getattr(roll, "vacant_count_on", None)
+    occupancy_pct = (
+        round(float(occ_fn(as_of)), 4) if callable(occ_fn) and unit_count else 0.0
+    )
+    vacant_count = int(vacant_fn(as_of)) if callable(vacant_fn) else 0
+    return {
+        "property_name": property_name,
+        "as_of": as_of or "",
+        "unit_count": unit_count,
+        "occupancy_pct": occupancy_pct,
+        "vacant_count": vacant_count,
+        "floor_plans": plans,
+    }
+
+
+def build_forecast_question(
+    question: str = "",
+    horizon_months: int = 12,
+    vault: dict[str, Any] | None = None,
+) -> str:
+    """MCP ask_vacancy question: named building + do-not-parse. Never a rent roll file."""
+    vault = vault or {}
+    name = str(vault.get("property_name") or "").strip()
+    as_of = str(vault.get("as_of") or "").strip()
+    asked = (question or "").strip()
+    occupancy_only = bool(asked) and bool(_OCCUPANCY_ONLY_RE.match(asked))
+    if occupancy_only:
+        if name and as_of:
+            asked = f"What occupancy do you predict for {name} as of {as_of}?"
+        elif name:
+            asked = f"What occupancy do you predict for {name}?"
+        else:
+            asked = asked or "What occupancy do you predict?"
+    else:
+        if not asked:
+            asked = (
+                f"Over the next {horizon_months} months, how many units expire or are MTM, "
+                "what monthly income is at risk, and what occupancy do you predict"
+                + (f" for {name}" if name else "")
+                + "?"
+            )
+        elif name and name.lower() not in asked.lower():
+            asked = asked.rstrip(" ?") + f" for {name}?"
+        if "do not request a rent roll" not in asked.lower():
+            asked = asked.rstrip(" ?") + "? Do not request a rent roll file."
+    lines = [
+        "Do not parse, upload, or train. Do not request a rent roll file. "
+        "This caller is questions-only (MCP ask_vacancy). A fit may already exist."
+    ]
+    if name:
+        headed = f"Score occupancy for {name}"
+        if as_of:
+            headed += f" as of {as_of}"
+        lines.append(headed + ".")
+        bits = [
+            f"unit_count={vault.get('unit_count')}",
+            f"occupancy_pct={vault.get('occupancy_pct')}",
+            f"vacant_count={vault.get('vacant_count')}",
+        ]
+        plans = [str(p) for p in (vault.get("floor_plans") or []) if str(p).strip()]
+        if plans:
+            bits.append("floor_plans=" + ", ".join(plans))
+        lines.append("Book snapshot for context only (not a file to parse): " + "; ".join(bits) + ".")
+    else:
+        lines.append(
+            "If no building is named, load_fit(\"\") and say which properties are trained."
+        )
+    lines.append("Question: " + asked)
+    return "\n".join(lines)
+
+
+def forecast(
+    username: str,
+    question: str,
+    horizon_months: int = 12,
+    vault: dict[str, Any] | None = None,
+) -> dict:
+    prompt = build_forecast_question(
+        question, horizon_months=horizon_months, vault=vault
     )
     result = chat(username, prompt)
     return {

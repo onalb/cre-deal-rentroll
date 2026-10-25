@@ -383,7 +383,8 @@ button.chip-easy { --chip: #2f6b4f; }
 button.chip-medium { --chip: #c4921a; }
 button.chip-hard { --chip: #9a3b2f; }
 button.chip-oos { --chip: #8a8580; }
-button.chip-predict { --chip: #3d6ea8; }
+button.chip-predict { --chip: #9a3b2f; }
+button.chip-predict-ok { --chip: #2f6b4f; }
 button.chip .chip-dot { background: var(--chip); }
 button.chip:hover { border-color: var(--chip); color: var(--chip); }
 button.chip.on {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { compactRunLog } from "./compactRunLog";
-import { DEMO_CHIPS } from "./demoChips";
+import { DEMO_CHIPS, fillChipPrompt } from "./demoChips";
 import { logMessageParts } from "./boldToolNames";
 
 const KEY = "cre-rentroll-username";
@@ -337,7 +337,7 @@ export default function App() {
   function fillChip(chip) {
     if (busy) return;
     disarmCompactLog();
-    setText(chip.prompt);
+    setText(fillChipPrompt(chip.prompt, session?.vault));
     setSearchFail(Boolean(chip.searchFail));
     setChipId(chip.id || "");
     setError("");

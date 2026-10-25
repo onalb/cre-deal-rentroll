@@ -27,12 +27,17 @@ UNIT = re.compile(r"^(unit|unit\s*(id|no|number|#)|apt|bldg[\s-]*unit|building[\
 LEASE_END = re.compile(r"lease\s*end|end\s*date|move[\s-]*out", re.I)
 LEASE_START = re.compile(r"lease\s*start|start\s*date|move[\s-]*in", re.I)
 _HEADER_HINT = re.compile(
-    r"unit|lease|status|rent|charge|occ|bldg|sqft|sq\s*ft|amount|type|mtm",
+    r"unit|lease|status|rent|charge|occ|bldg|sqft|sq\.?\s*ft|\bsf\b|netsf|amount|type|mtm",
     re.I,
 )
 _REAL_UNIT = re.compile(r"^\d+\s*[-/]\s*\d+")
 TYPE = re.compile(r"unit\s*type|floorplan|bed", re.I)
-SQFT = re.compile(r"sq\s*ft|sqft|area", re.I)
+SQFT = re.compile(
+    r"sq\.?\s*f(?:ee)?t\.?|sqft|square\s*(?:feet|foot)|"
+    r"n(?:et)?[_\s-]*s\.?f\.?|(?<![a-z])s\.?f\.?(?![a-z])|"
+    r"unit\s*size|\barea\b",
+    re.I,
+)
 MTM = re.compile(r"m(onth)?[\s-]*t(o)?[\s-]*m(onth)?|mtm", re.I)
 ADDR = re.compile(r"address|street|location", re.I)
 PROP = re.compile(r"property|community|asset|name$", re.I)
@@ -134,6 +139,35 @@ def _col(headers: list[str], pattern: re.Pattern[str]) -> int | None:
     return None
 
 
+def _looks_like_sqft(val: object) -> bool:
+    n = _num(val)
+    return 50 <= n <= 20000
+
+
+def _sqft_col(headers: list[str], rows: list[list[object]]) -> int | None:
+    """Map SF / SQFT / NetSF / Sq. Ft., else RealPage col-2 size on Bldg-Unit sheets."""
+    found = _col(headers, SQFT)
+    if found is not None:
+        return found
+    if not headers or not UNIT.search(headers[0] or ""):
+        return None
+    if len(headers) <= 2:
+        return None
+    h2 = headers[2] or ""
+    if h2 and (OCC.search(h2) or TYPE.search(h2) or INPLACE.search(h2) or AMT.search(h2)):
+        return None
+    hits = 0
+    for row in rows[:50]:
+        uid = str(row[0] or "").strip() if row else ""
+        if not uid or not _keep_uid(uid, False):
+            continue
+        if len(row) > 2 and _looks_like_sqft(row[2]):
+            hits += 1
+            if hits >= 3:
+                return 2
+    return None
+
+
 def _meta_from_grid(headers: list[str], rows: list[list[object]]) -> dict[str, str | None]:
     name = as_of = address = None
     # Header-row metadata (property name sitting in a column)
@@ -212,7 +246,7 @@ def _prefer_bldg(rows: list[list[object]], ui: int) -> bool:
 def parse_realpage(headers: list[str], rows: list[list[object]]) -> list[UnitRow]:
     ui = _col(headers, UNIT) or 0
     ti = _col(headers, TYPE)
-    si = _col(headers, SQFT)
+    si = _sqft_col(headers, rows)
     oi = _col(headers, OCC)
     mi = _col(headers, MTM)
     lsi = _col(headers, LEASE_START)
@@ -281,7 +315,7 @@ def parse_one_row(headers: list[str], rows: list[list[object]]) -> list[UnitRow]
     ri = _col(headers, INPLACE)
     oi = _col(headers, OCC)
     ti = _col(headers, TYPE)
-    si = _col(headers, SQFT)
+    si = _sqft_col(headers, rows)
     mi = _col(headers, MTM)
     lsi = _col(headers, LEASE_START)
     lei = _col(headers, LEASE_END)
@@ -371,8 +405,8 @@ def ingest_bytes(filename: str, raw: bytes) -> CanonicalRentRoll:
     headers, rows = _read_tabular(filename, raw)
     if not headers:
         raise ValueError("empty spreadsheet")
-    # Drop PII columns before parse
-    keep = [i for i, h in enumerate(headers) if h and not _is_pii(h)]
+    # Drop PII columns before parse. Keep blank headers (RealPage size is often col 2).
+    keep = [i for i, h in enumerate(headers) if not _is_pii(h)]
     headers = [headers[i] for i in keep]
     slim_rows: list[list[object]] = []
     for row in rows:

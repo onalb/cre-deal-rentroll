@@ -1,11 +1,11 @@
 La Cordoba
 Apr 2021
 Unit Details
-Bldg-Unit,Unit Type,Unit Status,Lease Start,Lease End,Charge Code,Amount
-1-101,1x1,Occupied,01/01/2020,12/31/2021,Charge Total:,1500
-1-101,1x1,Occupied,01/01/2020,12/31/2021,RENT,1500
-1-102,1x1,Occupied,06/01/2020,06/30/2022,Charge Total:,1600
-1-103,1x1,Vacant,01/01/2019,12/31/2020,Charge Total:,0
+Bldg-Unit,Unit Type,SF,Unit Status,Lease Start,Lease End,Charge Code,Amount
+1-101,1x1,700,Occupied,01/01/2020,12/31/2021,Charge Total:,1500
+1-101,1x1,700,Occupied,01/01/2020,12/31/2021,RENT,1500
+1-102,1x1,750,Occupied,06/01/2020,06/30/2022,Charge Total:,1600
+1-103,1x1,800,Vacant,01/01/2019,12/31/2020,Charge Total:,0
 Status Summary
 Description
 Occupied No Notice,100

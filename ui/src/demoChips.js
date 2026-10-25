@@ -1,3 +1,11 @@
+export function fillChipPrompt(prompt, vault) {
+  const name = vault?.property_name || "this property";
+  const asOf = vault?.as_of || "the roll as-of";
+  return String(prompt || "")
+    .replaceAll("{property_name}", name)
+    .replaceAll("{as_of}", asOf);
+}
+
 export const DEMO_CHIPS = [
   {
     id: "abstract",
@@ -5,15 +13,22 @@ export const DEMO_CHIPS = [
     label: "Abstract the roll",
     searchFail: false,
     prompt:
-      "What's the unit count, occupancy, in-place monthly income, vacant count, and any month-to-month on this rent roll?",
+      "What's the unit count, occupancy, in-place monthly income, vacant count, average unit sqft, and any month-to-month on this rent roll?",
+  },
+  {
+    id: "predict_occupancy_only",
+    level: "predict-ok",
+    label: "Predict occupancy",
+    searchFail: false,
+    prompt: "What occupancy do you predict for {property_name} as of {as_of}?",
   },
   {
     id: "predict",
     level: "predict",
-    label: "Predict occupancy",
+    label: "Predict occupancy (full)",
     searchFail: false,
     prompt:
-      "Over the next 12 months, how many units expire or are MTM, what income is at risk, and what occupancy do you predict?",
+      "Over the next 12 months, how many units expire or are MTM, what income is at risk, and what occupancy do you predict for {property_name}? Do not request a rent roll file.",
   },
   {
     id: "multi-1",

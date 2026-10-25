@@ -304,6 +304,7 @@ _QUERY_HEADLINE = (
     "mtm_count",
     "occupancy_pct",
     "in_place_monthly",
+    "avg_sqft",
 )
 _GEO_HEADLINE = ("lat", "lon")
 
@@ -327,6 +328,7 @@ def _allowed_numbers(roll: CanonicalRentRoll | None, traces: list[dict[str, Any]
         _add_num(allowed, roll.vacant_count)
         _add_num(allowed, roll.mtm_count)
         _add_num(allowed, roll.in_place_monthly)
+        _add_num(allowed, roll.avg_sqft)
         occ = float(roll.occupancy_pct)
         _add_num(allowed, occ)
         if 0 < occ <= 1.0000001:

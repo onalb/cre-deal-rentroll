@@ -600,6 +600,11 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "do not require compute_income" in sys
     assert "do not always call compute_income" in sys
     assert "mtm_count" in sys
+    assert "avg_sqft" in sys
+    assert "does not specify square footage" in sys
+    assert "hand-average" in sys
+    assert "short bullet per asked item" in sys
+    assert "not one paragraph" in sys
     assert "units on month-to-month leases" in sys
     assert "existence/yes-no" in sys
     assert "occupancy status" in sys
@@ -694,6 +699,9 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "occupied_count" in qu_doc and "vacant_count" in qu_doc
     assert "occupancy_pct" in qu_doc and "unit_count" in qu_doc
     assert "mtm_count" in qu_doc
+    assert "avg_sqft" in qu_doc
+    assert "does not specify square footage" in qu_doc
+    assert "hand-average" in qu_doc
     assert "one unfiltered query_units" in qu_doc
     assert "do not call twice" in qu_doc
     assert "never call occupancy=occupied" not in qu_doc
@@ -901,6 +909,8 @@ def test_query_units_payload_includes_roll_mtm_count(monkeypatch):
     assert payload["vacant_count"] == 13
     assert payload["occupancy_pct"] == round(151 / 164, 4)
     assert payload["mtm_count"] == roll.mtm_count == 0
+    assert payload["avg_sqft"] is None
+    assert payload["sqft_n"] == 0
     assert payload["note"] == HEADLINE_COUNTS_NOTE
     assert "complete in this result" in payload["note"]
     assert "list a filtered subset of unit rows" in payload["note"].lower()
@@ -921,6 +931,42 @@ def test_query_units_payload_includes_roll_mtm_count(monkeypatch):
     assert "note" not in occ
     assert occ["occupied_count"] == 151
     assert occ["vacant_count"] == 13
+
+
+def test_query_units_returns_avg_sqft_of_positive_sizes(monkeypatch):
+    reset_turn("tester")
+    units = [
+        UnitRow(unit_id="1", sqft=700, in_place_rent=1000, vacant=False, occupancy="Occupied"),
+        UnitRow(unit_id="2", sqft=800, in_place_rent=1100, vacant=False, occupancy="Occupied"),
+        UnitRow(unit_id="3", sqft=0, in_place_rent=0, vacant=True, occupancy="Vacant"),
+        UnitRow(unit_id="4", sqft=None, in_place_rent=900, vacant=False, occupancy="Occupied"),
+    ]
+    roll = CanonicalRentRoll(layout="one_row", property_name="La Cordoba", units=units)
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
+    payload = json.loads(query_units())
+    assert payload["avg_sqft"] == 750.0
+    assert payload["sqft_n"] == 2
+    assert payload["units"][0]["sqft"] == 700
+    assert "avg_sqft" in payload["note"]
+    vacant = json.loads(query_units(vacant_only=True))
+    assert vacant["avg_sqft"] is None
+
+
+def test_avg_sqft_skill_and_gold_case():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    abstract = (root / "skills" / "rent-roll-abstract" / "SKILL.md").read_text(encoding="utf-8")
+    cite = (root / "skills" / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
+    gold = json.loads((root / "tests" / "gold.json").read_text(encoding="utf-8"))
+    assert "avg_sqft" in abstract
+    assert "does not specify square footage" in abstract
+    assert "hand-average" in abstract
+    assert "short bullet per asked item" in abstract
+    assert "avg_sqft" in cite
+    case = next(c for c in gold["cases"] if c["id"] == "avg-sqft")
+    assert case["query"] == "whats the average sqft?"
+    assert "query_units" in case["required_tools"]
 
 
 def test_create_plan_three_needed_tools_are_three_items():

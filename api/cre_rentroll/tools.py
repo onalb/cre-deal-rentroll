@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from cre_rentroll import turn_ctx, vault
-from cre_rentroll.schemas import CanonicalRentRoll
+from cre_rentroll.schemas import CanonicalRentRoll, mean_positive_sqft
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
 
@@ -89,7 +89,8 @@ MEMO_PUBLISH_RULE = (
 )
 _HEADLINE_COUNT_RE = re.compile(
     r"\b(unit_count|unit count|occupied_count|vacant_count|occupancy_pct|"
-    r"occupancy|occupied|vacant|units|mtm_count|mtm|month[\s-]*to[\s-]*month)\b",
+    r"occupancy|occupied|vacant|units|mtm_count|mtm|month[\s-]*to[\s-]*month|"
+    r"avg_sqft|average\s+sqft|typical unit size|square footage|\bsqft\b)\b",
     re.I,
 )
 _LIST_UNITS_RE = re.compile(
@@ -108,8 +109,9 @@ _INCOME_ITEM_RE = re.compile(
 )
 _QUERY_UNITS_PHRASE_RE = re.compile(r"\bquery[\s_-]*units\b", re.I)
 HEADLINE_COUNTS_NOTE = (
-    "These headline counts are complete in this result; another query_units is "
-    "only needed to LIST a filtered subset of unit rows, not to re-fetch counts."
+    "These headline counts are complete in this result (including avg_sqft); "
+    "another query_units is only needed to LIST a filtered subset of unit rows, "
+    "not to re-fetch counts."
 )
 
 
@@ -646,8 +648,9 @@ def create_plan(tasks: str) -> str:
     one comma-joined item for two tools. That example is conditional, not a
     default checklist.
     One unfiltered query_units returns unit_count, occupied_count, vacant_count,
-    occupancy_pct, and mtm_count (units on month-to-month leases). If several
-    checklist intents are headline counts (units, occupancy, vacant, mtm_count),
+    occupancy_pct, mtm_count (units on month-to-month leases), and avg_sqft
+    (mean of units with sqft>0). If several checklist intents are headline counts
+    (units, occupancy, vacant, mtm_count, avg_sqft / typical unit size),
     that is ONE unfiltered query_units item, not four. After an unfiltered
     query_units has run this turn, do not call query_units again for those counts.
     Extra query_units only to list a filtered subset of unit rows, not
@@ -961,13 +964,17 @@ def ingest_noop_doc() -> str:
 def query_units(occupancy: str | None = None, vacant_only: bool = False) -> str:
     """Read the session vault unit grid.
 
-    When: rent-roll abstract, occupancy / vacant counts, unit mix. After ingest.
+    When: rent-roll abstract, occupancy / vacant counts, unit mix, average or
+    typical unit size (sqft). After ingest.
     What: occupancy filters unit occupancy status only (Occupied, Vacant, or
     all; omit or all = unfiltered). vacant_only lists vacancies.
     How: returns JSON summaries — never tenant names (PII already stripped).
     One unfiltered query_units returns unit_count, occupied_count, vacant_count,
-    occupancy_pct, and mtm_count plus a note that those headline counts are
-    complete in this result. Extra query_units only to list a filtered subset
+    occupancy_pct, mtm_count, and avg_sqft (mean of units with sqft>0; null if
+    none) plus a note that those headline counts are complete in this result.
+    Average / typical unit size is avg_sqft in this JSON — do not hand-average
+    the units grid, and do not say the rent roll does not specify square footage
+    when avg_sqft is present. Extra query_units only to list a filtered subset
     of unit rows, not to re-fetch counts. After an unfiltered query_units has
     run this turn, do not call query_units again for those counts.
     Do not call twice (occupied then vacant) for those counts.
@@ -998,6 +1005,10 @@ def query_units(occupancy: str | None = None, vacant_only: bool = False) -> str:
         "vacant_count": roll.vacant_count_on(as_of),
         "occupancy_pct": round(roll.occupancy_pct_on(as_of), 4) if roll.unit_count else 0.0,
         "mtm_count": roll.mtm_count,
+        "avg_sqft": mean_positive_sqft(units),
+        "sqft_n": sum(
+            1 for u in units if u.sqft is not None and float(u.sqft) > 0
+        ),
         "units": [u.model_dump() for u in units[:400]],
     }
     if _query_units_unfiltered(occupancy, vacant_only):
@@ -1422,15 +1433,22 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
     floor-plan vacant probability (ask_vacancy_agent — in-process logistic,
     not vacancy MCP ask_vacancy), map, weather.
     How: MCP streamable HTTP {RR_PREDICT_URL}/mcp tool ask_vacancy with
-    {question, session_id} (session reuse). Never /api/chat, never upload
-    or train; if :8000 has no fit, surface that answer.
+    {question, session_id} (session reuse). The question names the vault
+    property and book snapshot; never /api/chat, never upload or train.
+    If :8000 has no fit, surface that answer.
     """
-    from cre_rentroll.predict_client import forecast
+    from cre_rentroll.predict_client import forecast, vault_facts
 
     user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
     months = int(horizon_months or 12)
+    ctx = None
     try:
-        result = forecast(user, question or "", horizon_months=months)
+        roll = _roll()
+        ctx = vault_facts(roll, turn_ctx.asked_as_of() or roll.as_of)
+    except Exception:
+        ctx = None
+    try:
+        result = forecast(user, question or "", horizon_months=months, vault=ctx)
     except Exception as exc:  # noqa: BLE001 — surface a tool error, do not crash the turn
         result = {"ok": False, "error": str(exc), "source": "vacancy-prediction-agent"}
     turn_ctx.record(
