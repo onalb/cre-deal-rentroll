@@ -85,3 +85,7 @@ Strands is the agent **framework** (chat loop stays `run_agent` on Runtime). **A
 | Evaluations | **Batch** over Runtime CloudWatch traces (`deploy/start_batch_evaluation.py`). Live G/C/R is still `score_gcr`. No per-turn `client.evaluate`. | batch |
 
 Resident names on La Cordoba are stripped at ingest and should not be committed.
+
+## Occupancy forecast (`:8000`)
+
+`ask_prediction_agent` calls streamable-HTTP MCP `{RR_PREDICT_URL}/mcp` (default `http://127.0.0.1:8000/mcp`) tool `ask_vacancy` with `{question, session_id}` (one uuid reused per username). Rentroll never posts `/api/chat`, never uploads a file, and never trains that agent. Train only in the vacancy-agent UI (file picker + Send rent roll). If the building has no fit, surface that reply.

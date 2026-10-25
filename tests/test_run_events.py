@@ -724,7 +724,7 @@ def test_question_submit_still_streams_ingest_then_react(monkeypatch):
         emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
         return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
 
-    def fake_task(user, text, search_fail=False, has_attachment=False):
+    def fake_task(user, text, search_fail=False, has_attachment=False, chip_id=""):
         emit("inventory", "full tool menu (book)")
         emit("react", "ReAct turn 1")
         return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")

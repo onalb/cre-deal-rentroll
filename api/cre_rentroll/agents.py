@@ -69,6 +69,8 @@ BOOK_TOOLS = (
     "compute_income",
     "compute_noi",
     "compute_cap_rate",
+    "ask_vacancy_agent",
+    "ask_prediction_agent",
     "osm_geocode",
     "web_search",
     "publish_memo",
@@ -199,7 +201,18 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "as a numbered line — not one item per comma or clause in the user sentence, and never "
         "'osm_geocode, query_units' as one item. "
         "Never skip create_plan on in-scope CRE. A one-item checklist is fine when that one tool "
-        "answers the whole last message (this-deal occupancy only → query_units; map-only → "
+        "answers the whole last message (this-deal occupancy only → query_units; "
+        "which floor plan is more likely vacant, or the probability a unit type is vacant "
+        "→ one ask_vacancy_agent, and cite its probabilities; a vacant headcount stays "
+        "query_units; "
+        + (
+            "12-month occupancy / expirations / MTM waterfall / loss-to-lease / "
+            "predicted occupancy → one ask_prediction_agent (live vacancy agent on :8000), "
+            "not query_units and not ask_vacancy_agent; "
+            if "ask_prediction_agent" in inv.tool_names
+            else ""
+        )
+        + "map-only → "
         "osm_geocode; definition of a rent roll → web_search; create/publish a memo → "
         "the first (and typically only) work tool is publish_memo; average property value in "
         "that area / metro / comps / area/market facts → web_search; one web_search). "
@@ -228,7 +241,10 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "and no other tools.\n"
         f"{tools.MEMO_PUBLISH_RULE}\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
-        "compute_noi, compute_cap_rate, osm_geocode, web_search, or publish_memo). After that vault "
+        "compute_noi, compute_cap_rate, ask_vacancy_agent"
+        + (", ask_prediction_agent" if "ask_prediction_agent" in inv.tool_names else "")
+        + ", osm_geocode, "
+        "web_search, or publish_memo). After that vault "
         "tool, call update_plan_status with the SAME items: mark that step [completed] and the next "
         "[in_progress] — do not replace the list with a new one-liner and do not resend every "
         "line as [pending]. If that tool cannot supply the asked result (missing data, empty "
@@ -997,7 +1013,8 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                         "Call ONCE at the start. One numbered line per needed work tool "
                         "(not per comma in the user sentence) — never comma-join two tools. "
                         "A one-item list is fine when that one tool answers the whole last message "
-                        "(this-deal occupancy only → query_units; definition of a rent roll → "
+                        "(this-deal occupancy only → query_units; 12-month occupancy forecast / "
+                        "expirations / MTM waterfall → ask_prediction_agent; definition of a rent roll → "
                         "web_search; create/publish a memo or proceed/yes after a memo ask → "
                         "the first (and typically only) work tool is publish_memo — then "
                         "IMMEDIATELY call MCP publish_memo the same turn; NEVER print "
@@ -1129,6 +1146,35 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                 "noi": {"type": "number"},
             },
             "required": ["ask_price"],
+        },
+        "ask_vacancy_agent": {
+            "type": "object",
+            "properties": {
+                "floor_plan": {
+                    "type": "string",
+                    "description": (
+                        "One floor plan to score. Omit to score every plan in "
+                        "this building. Use for the probability a plan is vacant. "
+                        "A vacant headcount stays query_units."
+                    ),
+                }
+            },
+        },
+        "ask_prediction_agent": {
+            "type": "object",
+            "properties": {
+                "horizon_months": {
+                    "type": "integer",
+                    "description": "Forecast horizon. Default 12.",
+                },
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "Forward-looking occupancy / expirations / MTM / loss-to-lease "
+                        "question for the live vacancy prediction agent. Not current-book occupancy."
+                    ),
+                },
+            },
         },
         "osm_geocode": {
             "type": "object",

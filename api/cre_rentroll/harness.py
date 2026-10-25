@@ -5,6 +5,7 @@ from typing import Any
 
 from cre_rentroll import reflect, turn_ctx, vault
 from cre_rentroll.agents import BOOK, Inventory, RateLimitedError, RATE_LIMIT_TEXT, is_rate_limited, run_agent
+from cre_rentroll.chips import allow_predict, chip_prompt, filter_book_tools
 from cre_rentroll.settings import openai_api_key
 from cre_rentroll.eval_service import cited_locate_map_draft, format_eval_log, gate
 from cre_rentroll.ingest import ack_text, as_of_from_message, ingest_bytes
@@ -84,6 +85,8 @@ _SESSION_FOLLOW = (
     "(identity, greetings, the agent's name, chitchat): no tools "
     "and no score_gcr; use the system-prompt refuse sentence. "
     "Idle weekend weather is OOS; facts about the property's area or market stay in scope. "
+    "12-month occupancy / expirations / MTM waterfall / predicted occupancy → "
+    "ask_prediction_agent (not query_units). "
     "In-scope (this property, the rent roll, the deal, the area/market it sits in, "
     "or deal artifacts in vault/session such as saved memos): "
     "first tool is always create_plan. "
@@ -191,6 +194,7 @@ def run_task(
     has_attachment: bool = False,
     skip_scope: bool = False,
     persist_as: str | None = None,
+    chip_id: str = "",
 ) -> ChatOutcome:
     from cre_rentroll.agentcore_client import invoke_run_task, should_invoke_remote
 
@@ -200,16 +204,18 @@ def run_task(
             message,
             search_fail=search_fail,
             has_attachment=has_attachment,
+            chip_id=chip_id,
         )
     _ = has_attachment
     run_id = str(uuid.uuid4())[:8]
     shown_user = persist_as or user_visible(message)
+    llm_user = shown_user
     traces = turn_ctx.reset_turn(
         username, hitl_allow=hitl_allow, search_fail=search_fail, keep_run=skip_scope
     )
-    asked = as_of_from_message(persist_as or message)
+    asked = as_of_from_message(shown_user)
     turn_ctx.set_asked_as_of(asked)
-    turn_ctx.set_eval_query(persist_as or user_visible(message))
+    turn_ctx.set_eval_query(shown_user)
     sess = vault.load_session(username)
     messages = list(sess.get("messages") or [])
     retry_used = bool(sess.get("eval_retry_used"))
@@ -248,22 +254,36 @@ def run_task(
             begin_turn(username)
         except Exception:
             pass
-        inv = BOOK
+        names = filter_book_tools(BOOK.tool_names, chip_id, shown_user)
+        skills = BOOK.skills
+        if allow_predict(chip_id, shown_user):
+            skills = (*skills, "rr-predict")
+        inv = Inventory(BOOK.name, names, skills)
     else:
         # Prompt-only OOS was ignored by ReAct (always create_plan / web_search).
         # Offer no tools, skills, Gateway, or Memory so chitchat cannot MCP.
         inv = Inventory(BOOK.name, (), ())
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
+    predict_on = cre_ask and allow_predict(chip_id, shown_user)
     emit(
         "inventory",
-        "full tool menu (book)" if cre_ask else "no tools (non-CRE ask)",
+        (
+            "full tool menu (book, predict)"
+            if predict_on
+            else "full tool menu (book)"
+            if cre_ask
+            else "no tools (non-CRE ask)"
+        ),
         inventories=[inv.name],
     )
     if inv.skills:
         emit("skills", f"attached {', '.join(inv.skills)}", skills=list(inv.skills))
     if cre_ask:
         facts = _facts_for_agent(username, has_vault)
+        steer = chip_prompt(chip_id, shown_user)
+        if steer:
+            facts = steer + "\n" + facts
     elif has_vault:
         # Keep VAULT HAS in the prompt so OOS idle-chat cannot copy NEED_FILE_TEXT.
         facts = "VAULT HAS a rent roll for this session.\n"
@@ -281,7 +301,7 @@ def run_task(
         return outcome
 
     for book_inv, _sub in subgoals:
-        prompt = session_prompt(shown_user, messages)
+        prompt = session_prompt(llm_user, messages)
         try:
             draft = _invoke_react(book_inv, prompt, facts)
         except RateLimitedError as exc:
@@ -582,7 +602,14 @@ def _emit_if_reused_memory(
 ) -> None:
     """Heuristic: Python cannot read a hidden LLM thought. Log when vault tools were skipped."""
     names = {str(t.get("name") or "") for t in traces}
-    if names & {"query_units", "compute_income", "compute_noi", "compute_cap_rate"}:
+    if names & {
+        "query_units",
+        "compute_income",
+        "compute_noi",
+        "compute_cap_rate",
+        "ask_vacancy_agent",
+        "ask_prediction_agent",
+    }:
         return
     low = (draft or "").lower()
     if not any(w in low for w in ("vacant", "occupanc", "in-place", "unit")):

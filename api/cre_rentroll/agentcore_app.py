@@ -29,6 +29,7 @@ class InvocationBody(BaseModel):
     username: str | None = None
     search_fail: bool = False
     has_attachment: bool = False
+    chip_id: str = ""
     input: dict[str, Any] | None = None
 
 
@@ -46,6 +47,7 @@ def parse_payload(body: dict[str, Any] | InvocationBody) -> dict[str, Any]:
         "prompt": prompt,
         "search_fail": bool(raw.get("search_fail") or nested.get("search_fail")),
         "has_attachment": bool(raw.get("has_attachment") or nested.get("has_attachment")),
+        "chip_id": str(raw.get("chip_id") or nested.get("chip_id") or ""),
     }
 
 
@@ -63,6 +65,7 @@ def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:
         args["prompt"],
         search_fail=args["search_fail"],
         has_attachment=args["has_attachment"],
+        chip_id=args.get("chip_id") or "",
     )
 
 

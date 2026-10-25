@@ -29,6 +29,12 @@
       "Resource": "arn:aws:logs:us-east-1:226721156429:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
     },
     {
+      "Sid": "UnifiedTracesResourcePolicy",
+      "Effect": "Allow",
+      "Action": ["logs:PutResourcePolicy", "logs:DescribeResourcePolicies"],
+      "Resource": "*"
+    },
+    {
       "Effect": "Allow",
       "Action": ["xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules", "xray:GetSamplingTargets"],
       "Resource": "*"

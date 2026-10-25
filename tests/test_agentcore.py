@@ -11,10 +11,11 @@ def test_parse_payload_nested_and_flat():
     assert flat["username"] == "burak"
     assert flat["prompt"] == "occupancy?"
     nested = parse_payload(
-        InvocationBody(input={"username": "burak", "prompt": "units", "search_fail": True})
+        InvocationBody(input={"username": "burak", "prompt": "units", "search_fail": True, "chip_id": "predict"})
     )
     assert nested["prompt"] == "units"
     assert nested["search_fail"] is True
+    assert nested["chip_id"] == "predict"
 
 
 def test_session_id_is_long_enough():
@@ -386,7 +387,7 @@ def test_invocations_sse_emits_log_before_outcome(monkeypatch):
     from cre_rentroll.run_events import emit
     from cre_rentroll.schemas import ChatOutcome
 
-    def fake_task(user, text, search_fail=False, has_attachment=False):
+    def fake_task(user, text, search_fail=False, has_attachment=False, chip_id=""):
         emit("inventory", "full tool menu (book)")
         emit("react", "ReAct turn 1")
         return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")

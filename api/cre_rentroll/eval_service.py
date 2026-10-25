@@ -344,6 +344,15 @@ def _allowed_numbers(roll: CanonicalRentRoll | None, traces: list[dict[str, Any]
         elif name == "osm_geocode":
             for key in _GEO_HEADLINE:
                 _add_num(allowed, result.get(key))
+        elif name == "ask_vacancy_agent":
+            for plan in result.get("plans") or []:
+                if not isinstance(plan, dict):
+                    continue
+                _add_num(allowed, plan.get("units"))
+                _add_num(allowed, plan.get("vacant"))
+                _add_num(allowed, plan.get("probability"))
+        elif name == "ask_prediction_agent":
+            allowed |= _numbers(str(result.get("answer") or ""))
     return _with_percent_twins(allowed)
 
 

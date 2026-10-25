@@ -34,6 +34,16 @@ def compute_cap_rate(ask_price: float, noi: float | None = None) -> str:
     return tools.compute_cap_rate(ask_price=ask_price, noi=noi)
 
 
+@mcp.tool()
+def ask_vacancy_agent(floor_plan: str | None = None) -> str:
+    return tools.ask_vacancy_agent(floor_plan=floor_plan)
+
+
+@mcp.tool()
+def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
+    return tools.ask_prediction_agent(horizon_months=horizon_months, question=question)
+
+
 def main() -> None:
     mcp.run(transport="stdio")
 

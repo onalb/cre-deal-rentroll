@@ -383,8 +383,14 @@ button.chip-easy { --chip: #2f6b4f; }
 button.chip-medium { --chip: #c4921a; }
 button.chip-hard { --chip: #9a3b2f; }
 button.chip-oos { --chip: #8a8580; }
+button.chip-predict { --chip: #3d6ea8; }
 button.chip .chip-dot { background: var(--chip); }
 button.chip:hover { border-color: var(--chip); color: var(--chip); }
+button.chip.on {
+  border-color: var(--chip);
+  color: var(--chip);
+  box-shadow: inset 0 0 0 1px var(--chip);
+}
 .row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
 .file { font-size: 0.85rem; color: var(--muted); }
 .file input { display: block; margin-top: 0.2rem; }

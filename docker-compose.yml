@@ -39,6 +39,10 @@ services:
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
       CRE_SKILLS_DIR: /app/skills
+      # Vacancy prediction agent on the host (MCP /mcp ask_vacancy; train via its UI).
+      RR_PREDICT_URL: http://host.docker.internal:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - dynamodb
 

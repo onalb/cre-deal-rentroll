@@ -19,7 +19,8 @@ from typing import Any
 REGION = "us-east-1"
 RUNTIME = "cre_deal_rentroll-Nh63z6GXmK"
 LOG_GROUP = f"/aws/bedrock-agentcore/runtimes/{RUNTIME}-DEFAULT"
-SERVICE = f"{RUNTIME}.DEFAULT"
+# OTEL resource service.name is the Runtime *name*.DEFAULT, not the runtime id.
+SERVICE = "cre_deal_rentroll.DEFAULT"
 DEFAULT_EVALUATORS = (
     "Builtin.Faithfulness",
     "Builtin.Helpfulness",

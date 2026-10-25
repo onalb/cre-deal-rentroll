@@ -54,6 +54,34 @@ def main() -> int:
     )
     print("iam", code)
 
+    print("=== runtime exec IAM ===")
+    code, _, msg = aws_json(
+        [
+            "iam",
+            "put-role-policy",
+            "--role-name",
+            "CreDealRentrollAgentCoreRuntime",
+            "--policy-name",
+            "agentcore-exec",
+            "--policy-document",
+            f"file://{DEPLOY / 'agentcore-exec-policy.json'}",
+        ]
+    )
+    print("runtime-iam", code, msg[:200] if code else "ok")
+
+    print("=== runtime spans log resource policy ===")
+    code, _, msg = aws_json(
+        [
+            "logs",
+            "put-resource-policy",
+            "--policy-name",
+            "CreDealRentrollRuntimeSpansXRay",
+            "--policy-document",
+            f"file://{DEPLOY / 'runtime-spans-resource-policy.json'}",
+        ]
+    )
+    print("log-resource-policy", code, msg[:300] if code else "ok")
+
     print("=== update-gateway policy engine ===")
     code, data, msg = aws_json(
         [
@@ -93,6 +121,8 @@ def main() -> int:
         "AGENTCORE_CODE_INTERPRETER_ID": ids["CODE_INTERPRETER_ID"],
         "AGENTCORE_BROWSER_ID": ids["BROWSER_ID"],
         "AGENT_OBSERVABILITY_ENABLED": "true",
+        "UNIFIED_TRACES_DESTINATION_ENABLED": "true",
+        "RR_PREDICT_URL": "https://vacancy-agent.purplegrass-79f82a02.eastus.azurecontainerapps.io",
     }
     env.update(extra)
     env.pop("AGENTCORE_PAYMENT_MANAGER_ARN", None)

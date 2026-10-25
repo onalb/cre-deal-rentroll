@@ -15,6 +15,8 @@ MCP_TOOLS = frozenset(
         "compute_income",
         "compute_noi",
         "compute_cap_rate",
+        "ask_vacancy_agent",
+        "ask_prediction_agent",
         "osm_geocode",
         "web_search",
         "publish_memo",
@@ -336,6 +338,16 @@ def tool_message(name: str, args: dict[str, Any], result: Any) -> str:
         return f"{shown} → NOI {r.get('noi')}"
     if name == "compute_cap_rate":
         return f"{shown} → {r.get('implied_cap')} on ask {r.get('ask_price')}"
+    if name == "ask_vacancy_agent":
+        plans = r.get("plans") or []
+        return f"{shown} → vacancy agent scored {len(plans)} floor plans"
+    if name == "ask_prediction_agent":
+        if r.get("ok") is False:
+            return f"{shown} failed: {r.get('error')}"
+        preview = re.sub(r"\s+", " ", str(r.get("answer") or "")).strip()
+        if len(preview) > 160:
+            preview = preview[:157] + "…"
+        return f"{shown} → {preview}" if preview else f"{shown} → prediction agent"
     if name == "osm_geocode":
         if r.get("ok"):
             return f"{shown} → {r.get('display_name')}"

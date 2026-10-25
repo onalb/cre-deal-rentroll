@@ -21,7 +21,14 @@ RENTROLL_MCP = "deal-rentroll"
 OSM_MCP = "osm"
 
 VAULT_TOOL_NAMES = frozenset(
-    {"query_units", "compute_income", "compute_noi", "compute_cap_rate"}
+    {
+        "query_units",
+        "compute_income",
+        "compute_noi",
+        "compute_cap_rate",
+        "ask_vacancy_agent",
+        "ask_prediction_agent",
+    }
 )
 RENTROLL_TOOL_NAMES = frozenset(
     {
@@ -114,6 +121,8 @@ def book_mcp_impls() -> dict[str, Callable[..., str]]:
         "compute_income": mcp_vault.compute_income,
         "compute_noi": mcp_vault.compute_noi,
         "compute_cap_rate": mcp_vault.compute_cap_rate,
+        "ask_vacancy_agent": mcp_vault.ask_vacancy_agent,
+        "ask_prediction_agent": mcp_vault.ask_prediction_agent,
         "create_plan": mcp_rentroll.create_plan,
         "update_plan": mcp_rentroll.update_plan,
         "update_plan_status": mcp_rentroll.update_plan_status,

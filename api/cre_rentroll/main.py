@@ -148,6 +148,7 @@ def _run_chat_sync(
     attached: bool,
     filename: str | None,
     raw: bytes | None,
+    chip_id: str = "",
 ) -> dict[str, Any]:
     outcomes: list[dict[str, Any]] = []
     if filename and raw is not None:
@@ -161,7 +162,9 @@ def _run_chat_sync(
                 outcomes.append(harness.ingest_attachment(user, filename, raw).model_dump())
     if text:
         outcomes.append(
-            harness.run_task(user, text, search_fail=fail, has_attachment=attached).model_dump()
+            harness.run_task(
+                user, text, search_fail=fail, has_attachment=attached, chip_id=chip_id
+            ).model_dump()
         )
     if not outcomes:
         raise HTTPException(400, "attach a rent roll or type a message")
@@ -177,6 +180,7 @@ async def chat(
     request: Request,
     message: str = Form(default=""),
     search_fail: bool = Form(default=False),
+    chip_id: str = Form(default=""),
     file: UploadFile | None = File(default=None),
     x_username: str | None = Header(default=None),
 ):
@@ -203,7 +207,7 @@ async def chat(
     if not want_sse:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, fail, attached, filename, raw)
+            last = _run_chat_sync(user, text, fail, attached, filename, raw, chip_id)
         finally:
             run_events.reset(token)
         last["logs"] = collected
@@ -216,7 +220,7 @@ async def chat(
     def work() -> None:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, fail, attached, filename, raw)
+            last = _run_chat_sync(user, text, fail, attached, filename, raw, chip_id)
             last["logs"] = collected
             q.put(("done", last))
         except HTTPException as exc:

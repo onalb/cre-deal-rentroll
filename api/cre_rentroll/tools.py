@@ -64,6 +64,8 @@ VAULT_TOOL_NAMES = frozenset(
 WORK_TOOL_NAMES = frozenset(
     {
         *VAULT_TOOL_NAMES,
+        "ask_vacancy_agent",
+        "ask_prediction_agent",
         "osm_geocode",
         "web_search",
         "publish_memo",
@@ -95,7 +97,7 @@ _LIST_UNITS_RE = re.compile(
     re.I,
 )
 _NON_HEADLINE_TOOLS_RE = re.compile(
-    r"\b(compute_income|compute_noi|compute_cap_rate|osm_geocode|web_search|"
+    r"\b(compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_prediction_agent|osm_geocode|web_search|"
     r"publish_memo|score_gcr|reflection)\b",
     re.I,
 )
@@ -1374,6 +1376,71 @@ def score_gcr(draft: str) -> str:
     return json.dumps(payload)
 
 
+def ask_vacancy_agent(floor_plan: str | None = None) -> str:
+    """Ask the vacancy agent for the probability a floor plan is vacant.
+
+    When: the user asks which floor plan is more likely vacant, or the
+    probability a unit type is vacant. A headcount of vacant units is
+    query_units, not this tool.
+    What: optional floor_plan — one plan name. Omit to score every plan.
+    How: sends unit type and vacant flag only. The vacancy agent fits a
+    logistic regression on this building and returns a probability per plan.
+    No tenant names. Cite those probabilities. Do not estimate rent here.
+    """
+    from cre_rentroll.vacancy_agent import VacancyAgent
+
+    try:
+        roll = _roll()
+    except RuntimeError as exc:
+        if _is_empty_vault_error(exc):
+            return _need_file_json("ask_vacancy_agent", {"floor_plan": floor_plan})
+        raise
+    as_of = turn_ctx.asked_as_of() or roll.as_of
+    units: list[dict[str, Any]] = []
+    for unit in roll.units:
+        occ = (unit.occupancy or "").lower()
+        if "model" in occ or "excluded" in occ:
+            continue
+        units.append(
+            {
+                "plan": (unit.unit_type or "unknown").strip() or "unknown",
+                "vacant": bool(unit.vacant_on(as_of)),
+            }
+        )
+    result = VacancyAgent().run(units, floor_plan=floor_plan)
+    turn_ctx.record("ask_vacancy_agent", {"floor_plan": floor_plan}, result)
+    return json.dumps(result)
+
+
+def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
+    """Call the live vacancy prediction agent (MCP :8000) for a forward outlook.
+
+    When: forecast occupancy, lease expirations, MTM waterfall, rollover,
+    loss-to-lease, or predicted income. Also when the Predict occupancy chip
+    is on and the last message is forward-looking.
+    When not: current occupancy or in-place rent (query_units / compute_income),
+    floor-plan vacant probability (ask_vacancy_agent — in-process logistic,
+    not vacancy MCP ask_vacancy), map, weather.
+    How: MCP streamable HTTP {RR_PREDICT_URL}/mcp tool ask_vacancy with
+    {question, session_id} (session reuse). Never /api/chat, never upload
+    or train; if :8000 has no fit, surface that answer.
+    """
+    from cre_rentroll.predict_client import forecast
+
+    user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
+    months = int(horizon_months or 12)
+    try:
+        result = forecast(user, question or "", horizon_months=months)
+    except Exception as exc:  # noqa: BLE001 — surface a tool error, do not crash the turn
+        result = {"ok": False, "error": str(exc), "source": "vacancy-prediction-agent"}
+    turn_ctx.record(
+        "ask_prediction_agent",
+        {"horizon_months": months, "question": question},
+        result,
+    )
+    return json.dumps(result)
+
+
 TOOL_IMPLS: dict[str, Any] = {
     "create_plan": create_plan,
     "update_plan": update_plan,
@@ -1387,4 +1454,6 @@ TOOL_IMPLS: dict[str, Any] = {
     "osm_geocode": osm_geocode,
     "web_search": web_search,
     "publish_memo": publish_memo,
+    "ask_vacancy_agent": ask_vacancy_agent,
+    "ask_prediction_agent": ask_prediction_agent,
 }
