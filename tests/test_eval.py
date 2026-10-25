@@ -814,7 +814,8 @@ def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert "same as with vacancy" in JUDGE_SYS.lower()
     assert "user-stated scenario rents" in JUDGE_SYS.lower()
     assert "vacant-fill-only" in JUDGE_SYS.lower() or "vacant fill" in JUDGE_SYS.lower()
-    assert "DeepEval" in JUDGE_SYS
+    assert "Judge only from QUERY, ANSWER, and FACTS." in JUDGE_SYS
+    assert "Do not use DeepEval." not in JUDGE_SYS
     assert '"reason"' in JUDGE_SYS
     assert "interview" in JUDGE_SYS.lower()
     assert "gold.json" in JUDGE_SYS

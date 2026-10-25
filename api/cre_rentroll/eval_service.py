@@ -637,7 +637,7 @@ C (request completeness — not gold.json): Did the answer cover what was asked 
 - Do not require lat/lon unless the user asked location / map / geocode / corrected the last pin.
 - Do not treat CI gold fields as required.
 
-Judge only from QUERY, ANSWER, and FACTS. Do not use DeepEval.
+Judge only from QUERY, ANSWER, and FACTS.
 reason: if any of G/C/R is 1-2 or the answer invents numbers, say which axis failed and cite vault/tool figures. Optional notes / justification / invented fields are merged into reason. Do not quote the user question, interview questions, or gold.json."""
 
 
