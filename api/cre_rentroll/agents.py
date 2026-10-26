@@ -91,6 +91,10 @@ INVENTORIES = {"DealRentroll": BOOK}
 
 
 def load_skill_text(names: tuple[str, ...]) -> str:
+    from cre_rentroll.capabilities_client import fetch_skills, gateway_base
+
+    if gateway_base():
+        return fetch_skills(names)
     try:
         from cre_rentroll.agentcore_platform import load_registry_skills
 
@@ -116,6 +120,8 @@ def load_skill_text(names: tuple[str, ...]) -> str:
 
 def system_prompt(inv: Inventory, facts: str) -> str:
     skills = load_skill_text(inv.skills)
+    floor_tool = "ask_vacancy_agent"
+    floor_cite = "cite its probabilities"
     vault_has = "VAULT HAS" in (facts or "")
     if vault_has:
         file_scope = (
@@ -207,12 +213,12 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Never skip create_plan on in-scope CRE. A one-item checklist is fine when that one tool "
         "answers the whole last message (this-deal occupancy only → query_units; "
         "which floor plan is more likely vacant, or the probability a unit type is vacant "
-        "→ one ask_vacancy_agent, and cite its probabilities; a vacant headcount stays "
+        f"→ one {floor_tool}, and {floor_cite}; a vacant headcount stays "
         "query_units; "
         + (
             "12-month occupancy / expirations / MTM waterfall / loss-to-lease / "
-            "predicted occupancy → one ask_prediction_agent (live vacancy agent on :8000), "
-            "not query_units and not ask_vacancy_agent; "
+            "predicted occupancy → one ask_prediction_agent (capabilities gateway /mcp/deal), "
+            f"not query_units and not {floor_tool}; "
             "if that tool says the building is not trained or asks which floor plan "
             "(bullet list of plans, no probabilities), quote that as the user answer "
             "and STOP — do not call ask_prediction_agent again this turn with a "
@@ -254,7 +260,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "and no other tools.\n"
         f"{tools.MEMO_PUBLISH_RULE}\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
-        "compute_noi, compute_cap_rate, ask_vacancy_agent"
+        f"compute_noi, compute_cap_rate, {floor_tool}"
         + (", ask_prediction_agent" if "ask_prediction_agent" in inv.tool_names else "")
         + ", osm_geocode, "
         "web_search, or publish_memo). After that vault "

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from cre_rentroll.agents import BOOK
 from cre_rentroll.chips import allow_predict, chip_prompt, filter_book_tools
-from cre_rentroll.predict_client import reset_predict_state
+from cre_rentroll.predict_followup import reset_predict_state
 
 
 def test_predict_chip_allows_inventory():
@@ -66,7 +66,7 @@ def test_followup_keeps_predict_tool_without_chip(monkeypatch):
     reset_predict_state()
     assert allow_predict("", "Plan A", username="tester") is False
     monkeypatch.setattr(
-        "cre_rentroll.predict_client.session_awaiting_followup",
+        "cre_rentroll.predict_followup.session_awaiting_followup",
         lambda user: user == "tester",
     )
     assert allow_predict("", "Plan A", username="tester") is True

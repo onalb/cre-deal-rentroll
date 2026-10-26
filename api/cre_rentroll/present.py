@@ -11,7 +11,7 @@ _OPERATOR_LEAK = re.compile(
     r"Search already failed)"
 )
 _WORK = (
-    r"query_units|compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_prediction_agent|"
+    r"query_units|compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_vacancy|ask_prediction_agent|"
     r"osm_geocode|web_search|create_plan|update_plan(?:_status)?|"
     r"score_gcr|reflection|publish_memo"
 )
@@ -77,7 +77,7 @@ def user_visible(raw: str) -> str:
 
 def quoted_prediction_clarification(traces: list) -> str:
     """Vacancy MCP not-trained / which-plan text, if the Book called that tool."""
-    from cre_rentroll.predict_client import looks_like_clarification
+    from cre_rentroll.predict_followup import looks_like_clarification
 
     for row in reversed(traces or []):
         if str(row.get("name") or "") != "ask_prediction_agent":

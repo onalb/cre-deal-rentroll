@@ -41,8 +41,8 @@ services:
       CRE_SKILLS_DIR: /app/skills
       GOLD_EVAL_XLSX: /app/data/gold/lacordoba.xlsx
       GOLD_EVAL_CASES: /app/tests/gold.json
-      # Vacancy prediction agent on the host (MCP /mcp ask_vacancy; train via its UI).
-      RR_PREDICT_URL: http://host.docker.internal:8000
+      # Capability tools POST this. Host process or the gateway container on 8010.
+      CAPABILITIES_GATEWAY_URL: http://host.docker.internal:8010
     volumes:
       - ./data/gold:/app/data/gold:ro
     extra_hosts:

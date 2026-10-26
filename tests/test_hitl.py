@@ -33,6 +33,26 @@ def _bind_ddb(monkeypatch):
     return store
 
 
+def _gateway_saves_approved_memo(monkeypatch) -> None:
+    """Approve goes through /mcp/deal. The gateway writes MEMO# on the shared table."""
+    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+
+    def fake(name, arguments, timeout=180.0):
+        assert name == "publish_memo"
+        assert arguments.get("hitl_allow") is True
+        saved = vault.save_memo(arguments["username"], arguments["title"], arguments["body"])
+        return json.dumps(
+            {
+                "status": "published",
+                "title": arguments["title"],
+                "bytes": len(arguments.get("body") or ""),
+                "ts": saved.get("ts"),
+            }
+        )
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
+
+
 def _pending() -> dict:
     return {
         "tool": "publish_memo",
@@ -133,6 +153,7 @@ def test_hitl_deny_stays_unpublished(monkeypatch):
 def test_hitl_approve_persists_and_retrieves_memo(monkeypatch):
     pending = _pending()
     store = _bind_ddb(monkeypatch)
+    _gateway_saves_approved_memo(monkeypatch)
     monkeypatch.setattr(
         "cre_rentroll.hitl.vault.load_session",
         lambda _u: {"messages": [], "pending_hitl": pending},
@@ -203,6 +224,7 @@ def test_hitl_api_approve_appends_memo_to_history(monkeypatch):
     monkeypatch.setattr("cre_rentroll.hitl.vault.save_session", save_session)
     monkeypatch.setattr("cre_rentroll.dynamo.ensure_table", lambda: None)
     _bind_ddb(monkeypatch)
+    _gateway_saves_approved_memo(monkeypatch)
     client = TestClient(app)
     res = client.post("/api/hitl", json={"allow": True}, headers={"X-Username": "analyst"})
     assert res.status_code == 200

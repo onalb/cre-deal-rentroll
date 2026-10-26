@@ -57,7 +57,7 @@ PREDICT_CHIP_HINT = (
     "The user selected the Predict occupancy (full) chip. If THIS last message is "
     "forward-looking (forecast occupancy, expirations, MTM waterfall, rollover, "
     "loss-to-lease, predicted income), you SHOULD call ask_prediction_agent "
-    "(MCP /mcp ask_vacancy on RR_PREDICT_URL, default http://127.0.0.1:8000). "
+    "(capabilities gateway POST /mcp/deal tool ask_prediction_agent). "
     "Pass THIS user question (plus do not parse/train). Do not invent a building. "
     "Rentroll does not upload or train that agent — training is only via the "
     "vacancy-agent UI. "
@@ -70,7 +70,7 @@ PREDICT_CHIP_HINT = (
 PREDICT_ONLY_CHIP_HINT = (
     "The user selected the occupancy-only Predict occupancy chip. If THIS last "
     "message is forward occupancy, you SHOULD call ask_prediction_agent "
-    "(MCP /mcp ask_vacancy on RR_PREDICT_URL, default http://127.0.0.1:8000). "
+    "(capabilities gateway POST /mcp/deal tool ask_prediction_agent). "
     "Answer occupancy only — do not expand into expirations, MTM waterfall, "
     "loss-to-lease, or predicted income unless occupancy itself. Forward THIS "
     "user question; do not add a property or as-of the user did not write. "
@@ -89,7 +89,7 @@ def is_forward_looking(message: str) -> bool:
 
 FORWARD_HINT = (
     "This question looks forward-looking. You SHOULD call ask_prediction_agent "
-    "(MCP /mcp ask_vacancy on :8000) for forecast occupancy, expirations, MTM, "
+    "(capabilities gateway POST /mcp/deal tool ask_prediction_agent) for forecast occupancy, expirations, MTM, "
     "rollover, loss-to-lease, or predicted income. Do not upload or train. "
     f"{_QUOTE_MCP} "
     "Skip it for current-book rent, geocode, or weather."
@@ -112,7 +112,7 @@ def allow_predict(chip_id: str = "", message: str = "", username: str = "") -> b
     if cid:
         return bool(_CHIP_ALLOW_PREDICT.get(cid, False))
     if username:
-        from cre_rentroll.predict_client import (
+        from cre_rentroll.predict_followup import (
             is_followup_reply,
             session_awaiting_followup,
         )
@@ -124,21 +124,37 @@ def allow_predict(chip_id: str = "", message: str = "", username: str = "") -> b
 
 def chip_prompt(chip_id: str = "", message: str = "", username: str = "") -> str:
     cid = (chip_id or "").strip()
+    text = ""
     if cid == PREDICT_CHIP:
-        return PREDICT_CHIP_HINT
-    if cid == PREDICT_ONLY_CHIP:
-        return PREDICT_ONLY_CHIP_HINT
-    if username:
-        from cre_rentroll.predict_client import (
+        text = PREDICT_CHIP_HINT
+    elif cid == PREDICT_ONLY_CHIP:
+        text = PREDICT_ONLY_CHIP_HINT
+    elif username:
+        from cre_rentroll.predict_followup import (
             is_followup_reply,
             session_awaiting_followup,
         )
 
         if session_awaiting_followup(username) and is_followup_reply(message):
-            return FOLLOWUP_HINT
-    if not cid and is_forward_looking(message):
-        return FORWARD_HINT
-    return ""
+            text = FOLLOWUP_HINT
+    if not text and not cid and is_forward_looking(message):
+        text = FORWARD_HINT
+    return _gateway_chip_text(text)
+
+
+def _gateway_chip_text(text: str) -> str:
+    """When the gateway URL is set, name that host. Tool names stay put."""
+    if not text:
+        return text
+    from cre_rentroll.capabilities_client import gateway_base
+
+    base = gateway_base()
+    if not base:
+        return text
+    return text.replace(
+        "capabilities gateway POST /mcp/deal",
+        f"capabilities gateway {base}/mcp/deal",
+    )
 
 
 def filter_book_tools(
@@ -148,5 +164,7 @@ def filter_book_tools(
     username: str = "",
 ) -> tuple[str, ...]:
     if allow_predict(chip_id, message, username=username):
-        return tool_names
-    return tuple(n for n in tool_names if n != PREDICT_TOOL)
+        names = tool_names
+    else:
+        names = tuple(n for n in tool_names if n != PREDICT_TOOL)
+    return names

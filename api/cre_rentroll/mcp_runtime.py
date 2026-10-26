@@ -136,7 +136,14 @@ def book_mcp_impls() -> dict[str, Callable[..., str]]:
 
 
 def _maybe_gateway(fn: Callable[..., Any], name: str) -> Callable[..., Any]:
-    """Vault/geo/search go through AgentCore Gateway when the runtime is wired."""
+    """Capability tools are only the capabilities-gateway client in the function body.
+
+    Harness tools stay in-process. AgentCore is not a fallback for the nine tools.
+    """
+    from cre_rentroll.capabilities_client import CAPABILITY_TOOLS
+
+    if name in CAPABILITY_TOOLS:
+        return fn
     from cre_rentroll.agentcore_platform import GATEWAY_TOOL_NAMES, gateway_call
 
     if name not in GATEWAY_TOOL_NAMES:

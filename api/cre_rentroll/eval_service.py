@@ -234,7 +234,7 @@ def ask_skips_vault_payload(query: str) -> bool:
 
 def last_prediction_clarify_answer(traces: list[dict[str, Any]] | None) -> str:
     """Last ask_prediction_agent reply if it is a follow-up / not-trained question."""
-    from cre_rentroll.predict_client import looks_like_clarification
+    from cre_rentroll.predict_followup import looks_like_clarification
 
     last: dict[str, Any] | None = None
     for t in traces or []:
@@ -253,7 +253,7 @@ def last_prediction_clarify_answer(traces: list[dict[str, Any]] | None) -> str:
 
 def prediction_clarify_draft(draft: str, traces: list[dict[str, Any]] | None) -> bool:
     """True when the draft is quoting a predictor clarifying / not-trained reply."""
-    from cre_rentroll.predict_client import looks_like_clarification
+    from cre_rentroll.predict_followup import looks_like_clarification
 
     tool_answer = last_prediction_clarify_answer(traces)
     if not tool_answer:
@@ -403,7 +403,7 @@ def _allowed_numbers(roll: CanonicalRentRoll | None, traces: list[dict[str, Any]
                 _add_num(allowed, plan.get("units"))
                 _add_num(allowed, plan.get("vacant"))
                 _add_num(allowed, plan.get("probability"))
-        elif name == "ask_prediction_agent":
+        elif name in {"ask_prediction_agent", "ask_vacancy"}:
             allowed |= _numbers(str(result.get("answer") or ""))
     return _with_percent_twins(allowed)
 

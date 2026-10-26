@@ -5,12 +5,8 @@ import os
 import re
 from typing import Any
 
-import httpx
-
 from cre_rentroll import turn_ctx, vault
-from cre_rentroll.schemas import CanonicalRentRoll, mean_positive_sqft
-
-NOMINATIM = "https://nominatim.openstreetmap.org/search"
+from cre_rentroll.schemas import CanonicalRentRoll
 
 _TASK_STATUSES = ("completed", "incomplete", "in_progress", "pending")
 _NUM_PREFIX = re.compile(r"^\s*\d+[.)\-:]\s*")
@@ -98,7 +94,7 @@ _LIST_UNITS_RE = re.compile(
     re.I,
 )
 _NON_HEADLINE_TOOLS_RE = re.compile(
-    r"\b(compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_prediction_agent|osm_geocode|web_search|"
+    r"\b(compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_vacancy|ask_prediction_agent|osm_geocode|web_search|"
     r"publish_memo|score_gcr|reflection)\b",
     re.I,
 )
@@ -123,19 +119,6 @@ def _roll() -> CanonicalRentRoll:
     if roll is None:
         raise RuntimeError("no rent roll in the session vault — attach a CSV/xlsx first")
     return roll
-
-
-def _need_file_json(name: str, args: dict[str, Any]) -> str:
-    """Python vault gate — no extra LLM. Empty vault cannot run compute/query."""
-    from cre_rentroll.scope import NEED_FILE_TEXT
-
-    payload = {"need_file": True, "ok": True, "message": NEED_FILE_TEXT}
-    turn_ctx.record(name, args, payload)
-    return json.dumps(payload)
-
-
-def _is_empty_vault_error(exc: BaseException) -> bool:
-    return "no rent roll" in str(exc).lower()
 
 
 def _norm_task_text(raw: str) -> str:
@@ -961,14 +944,72 @@ def ingest_noop_doc() -> str:
     return "ingest is executed by the API on attach, not as a model tool"
 
 
+def _capability(name: str, arguments: dict[str, Any]) -> str:
+    """POST this tool to the capabilities gateway. No local math."""
+    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool, gateway_base
+
+    payload_args = {key: value for key, value in arguments.items() if value is not None}
+    user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
+    if not gateway_base():
+        err = {"ok": False, "error": GATEWAY_REQUIRED}
+        turn_ctx.record(name, payload_args, err)
+        return json.dumps(err)
+    remote_args = dict(payload_args)
+    remote_args["username"] = user
+    if name in {
+        "query_units",
+        "compute_income",
+        "compute_noi",
+        "compute_cap_rate",
+        "ask_vacancy_agent",
+        "ask_prediction_agent",
+    }:
+        asked = turn_ctx.asked_as_of()
+        if asked:
+            remote_args["as_of"] = asked
+    if name == "publish_memo":
+        remote_args["hitl_allow"] = bool(turn_ctx.hitl_allowed())
+    if name == "web_search" and (
+        turn_ctx.search_should_fail() or os.environ.get("CRE_FORCE_SEARCH_FAIL") == "1"
+    ):
+        remote_args["force_fail"] = True
+    if name == "ask_prediction_agent" and not str(remote_args.get("question") or "").strip():
+        remote_args["question"] = (turn_ctx.eval_query() or "").strip()
+    try:
+        text = call_deal_tool(name, remote_args)
+    except Exception as exc:
+        err = {"ok": False, "error": str(exc), "source": "capabilities-gateway"}
+        turn_ctx.record(name, payload_args, err)
+        if name == "web_search":
+            raise RuntimeError(str(exc)) from exc
+        return json.dumps(err)
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        result = {"text": text, "ok": True}
+    if not isinstance(result, dict):
+        result = {"text": text, "ok": True}
+    if name == "ask_prediction_agent" and "awaiting_followup" in result:
+        from cre_rentroll.predict_followup import note_awaiting_followup
+
+        note_awaiting_followup(user, bool(result.get("awaiting_followup")))
+    turn_ctx.record(name, payload_args, result)
+    if name == "web_search" and result.get("ok") is False:
+        raise RuntimeError(str(result.get("error") or "web_search failed"))
+    if name == "compute_cap_rate" and result.get("error"):
+        raise ValueError(str(result["error"]))
+    return text
+
+
 def query_units(occupancy: str | None = None, vacant_only: bool = False) -> str:
-    """Read the session vault unit grid.
+    """Read the session vault unit grid through the capabilities gateway.
 
     When: rent-roll abstract, occupancy / vacant counts, unit mix, average or
     typical unit size (sqft). After ingest.
     What: occupancy filters unit occupancy status only (Occupied, Vacant, or
     all; omit or all = unfiltered). vacant_only lists vacancies.
-    How: returns JSON summaries — never tenant names (PII already stripped).
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool query_units. Returns JSON
+    summaries — never tenant names (PII already stripped).
     One unfiltered query_units returns unit_count, occupied_count, vacant_count,
     occupancy_pct, mtm_count, and avg_sqft (mean of units with sqft>0; null if
     none) plus a note that those headline counts are complete in this result.
@@ -980,72 +1021,21 @@ def query_units(occupancy: str | None = None, vacant_only: bool = False) -> str:
     Do not call twice (occupied then vacant) for those counts.
     When not: follow-ups that only need a remembered number (use injected LTM
     FACT#); do not dump the full grid into a location or weather answer.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    try:
-        roll = _roll()
-    except RuntimeError as exc:
-        if _is_empty_vault_error(exc):
-            return _need_file_json(
-                "query_units", {"occupancy": occupancy, "vacant_only": vacant_only}
-            )
-        raise
-    units = roll.units
-    as_of = turn_ctx.asked_as_of() or roll.as_of
-    if vacant_only:
-        units = [u for u in units if u.vacant_on(as_of)]
-    if occupancy and occupancy.strip().lower() not in {"all", ""}:
-        units = [u for u in units if (u.occupancy or "").lower() == occupancy.lower()]
-    payload = {
-        "property_name": roll.property_name,
-        "as_of": as_of,
-        "geo_confidence": roll.geo_confidence,
-        "suggested_address": roll.suggested_address,
-        "unit_count": roll.unit_count,
-        "occupied_count": roll.occupied_count_on(as_of),
-        "vacant_count": roll.vacant_count_on(as_of),
-        "occupancy_pct": round(roll.occupancy_pct_on(as_of), 4) if roll.unit_count else 0.0,
-        "mtm_count": roll.mtm_count,
-        "avg_sqft": mean_positive_sqft(units),
-        "sqft_n": sum(
-            1 for u in units if u.sqft is not None and float(u.sqft) > 0
-        ),
-        "units": [u.model_dump() for u in units[:400]],
-    }
-    if _query_units_unfiltered(occupancy, vacant_only):
-        payload["note"] = HEADLINE_COUNTS_NOTE
-    turn_ctx.record("query_units", {"occupancy": occupancy, "vacant_only": vacant_only}, payload)
-    return json.dumps(payload)
-
-
-def _vacant_asking_rent(unit: Any) -> float:
-    """Asking/market rent still on a vacant row, else leftover in_place_rent."""
-    rent = float(getattr(unit, "in_place_rent", 0) or 0)
-    if rent > 0:
-        return rent
-    extras = getattr(unit, "charge_codes", None) or {}
-    if not isinstance(extras, dict):
-        return 0.0
-    for key, val in extras.items():
-        lk = str(key).lower()
-        if "market" not in lk and lk not in {"asking", "ask", "_market_rent"}:
-            continue
-        try:
-            n = float(val or 0)
-        except (TypeError, ValueError):
-            continue
-        if n > 0:
-            return n
-    return 0.0
+    return _capability("query_units", {"occupancy": occupancy, "vacant_only": vacant_only})
 
 
 def compute_income(vacant_fill_rent: float | None = None) -> str:
-    """Sum in-place monthly rent from the vaulted unit grid.
+    """Sum in-place monthly rent from the vaulted unit grid via the capabilities gateway.
 
     When: in-place monthly, annualized income, or a 100% occupancy / all-units-
     occupied / no-vacant income estimate from the vaulted roll.
     What: optional vacant_fill_rent — monthly $ the user stated to fill each vacant
     unit (scenario). Omit for vault/asking-rent full occupancy.
-    How: in_place_monthly is occupied units only; vacant in-place is zero.
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool compute_income.
+    in_place_monthly is occupied units only; vacant in-place is zero.
     Return JSON with monthly, annualized, occupied_count, vacant_count,
     occupancy_pct, mtm_count (units on month-to-month leases),
     mean_occupied_rent, vacant_asking_monthly, and
@@ -1057,72 +1047,13 @@ def compute_income(vacant_fill_rent: float | None = None) -> str:
     scenario_full_occupancy_annual / monthly — not vacant fill alone.
     Use counts for existence/yes-no.
     When not: do not invent rent; do not geocode or web-search.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    try:
-        roll = _roll()
-    except RuntimeError as exc:
-        if _is_empty_vault_error(exc):
-            return _need_file_json(
-                "compute_income", {"vacant_fill_rent": vacant_fill_rent}
-            )
-        raise
-    as_of = turn_ctx.asked_as_of() or roll.as_of
-    monthly = roll.in_place_monthly_on(as_of)
-    occupied = roll.occupied_count_on(as_of)
-    vacant = roll.vacant_count_on(as_of)
-    occ_pct = round(occupied / roll.unit_count, 4) if roll.unit_count else 0.0
-    mean_occ = round(monthly / occupied, 2) if occupied else None
-    vacant_asking = round(
-        sum(_vacant_asking_rent(u) for u in roll.units if u.vacant_on(as_of)),
-        2,
-    )
-    if vacant_asking > 0:
-        full_occ = round(monthly + vacant_asking, 2)
-        full_occ_method = "in_place_monthly + vacant_asking_monthly"
-    elif occupied and roll.unit_count:
-        full_occ = round((monthly / occupied) * roll.unit_count, 2)
-        full_occ_method = "mean_occupied_rent * unit_count"
-    else:
-        full_occ = None
-        full_occ_method = None
-    payload = {
-        "in_place_monthly": round(monthly, 2),
-        "in_place_annual": round(monthly * 12, 2),
-        "occupied_count": occupied,
-        "vacant_count": vacant,
-        "unit_count": roll.unit_count,
-        "occupancy_pct": occ_pct,
-        "mean_occupied_rent": mean_occ,
-        "vacant_asking_monthly": vacant_asking,
-        "estimated_full_occupancy_monthly": full_occ,
-        "estimated_full_occupancy_method": full_occ_method,
-        "note": (
-            "in_place_monthly is occupied units only. For 100% occupancy / all "
-            "units occupied / no-vacant income, use estimated_full_occupancy_monthly "
-            "(not in_place_monthly)."
-        ),
-        "mtm_count": roll.mtm_count,
-        "as_of": as_of,
-        "property_name": roll.property_name,
-    }
-    if vacant_fill_rent is not None:
-        fill = float(vacant_fill_rent)
-        fill_m = round(vacant * fill, 2)
-        payload["vacant_fill_rent"] = round(fill, 2)
-        payload["vacant_fill_monthly"] = fill_m
-        payload["vacant_fill_annual"] = round(fill_m * 12, 2)
-        payload["scenario_full_occupancy_monthly"] = round(monthly + fill_m, 2)
-        payload["scenario_full_occupancy_annual"] = round((monthly + fill_m) * 12, 2)
-        payload["note"] = (
-            payload["note"]
-            + " User-stated vacant fill: cite scenario_full_occupancy_annual "
-            "(in_place_annual + vacant_fill_annual), not vacant_fill_annual alone."
-        )
-    args = {}
+    args: dict[str, Any] = {}
     if vacant_fill_rent is not None:
         args["vacant_fill_rent"] = vacant_fill_rent
-    turn_ctx.record("compute_income", args, payload)
-    return json.dumps(payload)
+    return _capability("compute_income", args)
 
 
 def compute_noi(operating_expenses: float | None = None) -> str:
@@ -1130,26 +1061,13 @@ def compute_noi(operating_expenses: float | None = None) -> str:
 
     When: underwriting / Q3 when the user states expenses.
     What: operating_expenses annual dollars, or omit.
-    How: if expenses missing, return noi_incomplete=true — do not guess opex.
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool compute_noi.
+    If expenses missing, the gateway returns noi_incomplete=true — do not guess opex.
     When not: Q1 abstract; location-only questions.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    try:
-        roll = _roll()
-    except RuntimeError as exc:
-        if _is_empty_vault_error(exc):
-            return _need_file_json("compute_noi", {"operating_expenses": operating_expenses})
-        raise
-    income = round(roll.in_place_monthly * 12, 2)
-    incomplete = operating_expenses is None
-    noi = None if incomplete else round(income - float(operating_expenses), 2)
-    payload = {
-        "in_place_annual": income,
-        "operating_expenses": operating_expenses,
-        "noi": noi,
-        "noi_incomplete": incomplete,
-    }
-    turn_ctx.record("compute_noi", {"operating_expenses": operating_expenses}, payload)
-    return json.dumps(payload)
+    return _capability("compute_noi", {"operating_expenses": operating_expenses})
 
 
 def compute_cap_rate(ask_price: float, noi: float | None = None) -> str:
@@ -1157,73 +1075,35 @@ def compute_cap_rate(ask_price: float, noi: float | None = None) -> str:
 
     When: underwriting / Q3 only if the user gives an ask price.
     What: ask_price required; noi optional (else income is not a true NOI cap).
-    How: return JSON; if using income not NOI, flag implied_on_income=true.
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool compute_cap_rate.
+    If using income not NOI, the gateway flags implied_on_income=true.
     When not: Q1, Q2, or when no ask was provided — skip implied cap.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    try:
-        roll = _roll()
-    except RuntimeError as exc:
-        if _is_empty_vault_error(exc):
-            return _need_file_json("compute_cap_rate", {"ask_price": ask_price, "noi": noi})
-        raise
-    if ask_price <= 0:
-        raise ValueError("ask_price must be positive")
-    income = roll.in_place_monthly * 12
-    basis = float(noi) if noi is not None else income
-    payload = {
-        "ask_price": ask_price,
-        "basis": round(basis, 2),
-        "implied_cap": round(basis / ask_price, 6),
-        "implied_on_income": noi is None,
-        "note": "NOI incomplete — cap uses in-place income" if noi is None else "cap uses NOI",
-    }
-    turn_ctx.record("compute_cap_rate", {"ask_price": ask_price, "noi": noi}, payload)
-    return json.dumps(payload)
+    return _capability("compute_cap_rate", {"ask_price": ask_price, "noi": noi})
 
 
 def osm_geocode(query: str) -> str:
-    """Geocode a property via OpenStreetMap Nominatim (MCP OSM equivalent).
+    """Geocode a property via the capabilities gateway (OpenStreetMap Nominatim).
 
     When: Locator / Q2. Always call even if ingest left an address hint.
     What: query string — hint address or property name + city.
-    How: public Nominatim; returns display_name, lat, lon. On error, say so (harness replans).
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool osm_geocode.
+    Returns display_name, lat, lon. On error, say so (harness replans).
     When not: RollAbstractor / Q1; Underwriter / Q3 (OSM is forbidden there).
     Query must be a place or street+city — never a CSV/xlsx filename.
     If the last User message corrected the country/place, constrain the query
     with that correction and roll FACT# (property_name, unit_count, as_of,
     address_hint); do not reuse the previous OSM town. Never invent a street.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    q = (query or "").strip()
-    if not q:
-        raise ValueError("geocode query is empty")
-    headers = {"User-Agent": "cre-deal-rentroll/0.1 (interview harness)"}
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            r = client.get(NOMINATIM, params={"q": q, "format": "json", "limit": 1}, headers=headers)
-            r.raise_for_status()
-            hits = r.json()
-    except Exception as exc:  # harness reflection #2
-        payload = {"ok": False, "error": str(exc)}
-        turn_ctx.record("osm_geocode", {"query": q}, payload)
-        return json.dumps(payload)
-    if not hits:
-        payload = {"ok": False, "error": "no OSM hits", "query": q}
-        turn_ctx.record("osm_geocode", {"query": q}, payload)
-        return json.dumps(payload)
-    hit = hits[0]
-    payload = {
-        "ok": True,
-        "display_name": hit.get("display_name"),
-        "lat": float(hit["lat"]),
-        "lon": float(hit["lon"]),
-        "osm_id": hit.get("osm_id"),
-    }
-    turn_ctx.record("osm_geocode", {"query": q}, payload)
-    return json.dumps(payload)
+    return _capability("osm_geocode", {"query": query})
 
 
 def web_search(query: str, max_results: int = 5) -> str:
-    """Search the public web (ddgs) for current articles.
+    """Search the public web through the capabilities gateway.
 
     When: average property value in that area / metro / comps; area/market
     facts (demographics, hazards, comps). 'In that area' uses last
@@ -1235,34 +1115,18 @@ def web_search(query: str, max_results: int = 5) -> str:
     geocode — never invent a metro). One-item create_plan is enough. Never
     require a spreadsheet for that ask. Python does not write a canned figure.
     What: query string; max_results default 5.
-    How: returns title/href/snippet JSON. On failure return error JSON so the
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool web_search.
+    Returns title/href/snippet JSON. On failure the error is raised so the
     harness can reflect and replan (do not loop).
     When not: Q1 rent-roll abstract — forbidden. Do not search for tenant names.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    if turn_ctx.search_should_fail() or os.environ.get("CRE_FORCE_SEARCH_FAIL") == "1":
-        payload = {"ok": False, "error": "web_search forced failure (search-down fixture)"}
-        turn_ctx.record("web_search", {"query": query}, payload)
-        raise RuntimeError(payload["error"])
-    try:
-        from ddgs import DDGS
-
-        rows = list(DDGS().text(query, max_results=max_results))
-        payload = {
-            "ok": True,
-            "results": [
-                {"title": r.get("title"), "href": r.get("href"), "body": r.get("body")} for r in rows
-            ],
-        }
-    except Exception as exc:
-        payload = {"ok": False, "error": str(exc)}
-        turn_ctx.record("web_search", {"query": query}, payload)
-        raise RuntimeError(str(exc)) from exc
-    turn_ctx.record("web_search", {"query": query}, payload)
-    return json.dumps(payload)
+    return _capability("web_search", {"query": query, "max_results": max_results})
 
 
 def publish_memo(title: str, body: str) -> str:
-    """Write an underwriting memo (sensitive). Python does not write the memo text.
+    """Write an underwriting memo (sensitive) through the capabilities gateway.
 
     When: only when the user asks to create/publish/save a memo (Q-hitl). The
     first (and typically only) work tool is publish_memo — call it before any
@@ -1276,32 +1140,19 @@ def publish_memo(title: str, body: str) -> str:
     only the current FACT# / VAULT#default roll. Do not omit earlier deals in
     this chat just because a later roll is loaded. Python does not write the
     memo text.
-    How: HITL must approve in the UI before this publishes. Session stores
-    pending_hitl (title + body). After Approve, Python persists title/body/ts as
-    MEMO#{ts} on USER#{username} (same pk as VAULT#default). Python does not
-    draft or rewrite the body. Later asks for a saved / published memo or vault
-    notes answer only from those MEMO# rows in harness facts — never republish,
-    and never treat prior chat as the vault memo. If no MEMO# rows, say none
-    are published after HITL Approve.
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool publish_memo.
+    HITL must approve in the UI before this publishes. Session stores
+    pending_hitl (title + body). After Approve, the gateway persists title/body/ts
+    as MEMO#{ts} on USER#{username}. Python does not draft or rewrite the body.
+    Later asks for a saved / published memo or vault notes answer only from those
+    MEMO# rows in harness facts — never republish, and never treat prior chat as
+    the vault memo. If no MEMO# rows, say none are published after HITL Approve.
     When not: answering abstracts, maps, or cap-rate questions with no memo ask;
     do not score_gcr the memo body as the answer instead of this tool.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    if not turn_ctx.hitl_allowed():
-        pending = {"tool": "publish_memo", "title": title, "body": body}
-        turn_ctx.record("publish_memo", pending, {"status": "pending_hitl"})
-        return json.dumps({"status": "pending_hitl", "title": title})
-    saved: dict[str, Any] = {}
-    user = turn_ctx.username()
-    if user:
-        saved = vault.save_memo(user, title, body)
-    payload = {
-        "status": "published",
-        "title": title,
-        "bytes": len(body or ""),
-        "ts": saved.get("ts"),
-    }
-    turn_ctx.record("publish_memo", {"title": title}, payload)
-    return json.dumps(payload)
+    return _capability("publish_memo", {"title": title, "body": body})
 
 
 def score_gcr(draft: str) -> str:
@@ -1406,60 +1257,41 @@ def score_gcr(draft: str) -> str:
 
 
 def ask_vacancy_agent(floor_plan: str | None = None) -> str:
-    """Ask the vacancy agent for the probability a floor plan is vacant.
+    """Ask the capabilities gateway for the probability a floor plan is vacant.
 
     When: the user asks which floor plan is more likely vacant, or the
     probability a unit type is vacant. A headcount of vacant units is
     query_units, not this tool.
     What: optional floor_plan — one plan name. Omit to score every plan.
-    How: sends unit type and vacant flag only. The vacancy agent fits a
-    logistic regression on this building and returns a probability per plan.
-    No tenant names. Cite those probabilities. Do not estimate rent here.
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool ask_vacancy_agent.
+    The gateway fits a logistic regression on this building's vault roll and
+    returns a probability per plan. No tenant names. Cite those probabilities.
+    Do not estimate rent here. This does not call the vacancy app.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    from cre_rentroll.vacancy_agent import VacancyAgent
-
-    try:
-        roll = _roll()
-    except RuntimeError as exc:
-        if _is_empty_vault_error(exc):
-            return _need_file_json("ask_vacancy_agent", {"floor_plan": floor_plan})
-        raise
-    as_of = turn_ctx.asked_as_of() or roll.as_of
-    units: list[dict[str, Any]] = []
-    for unit in roll.units:
-        occ = (unit.occupancy or "").lower()
-        if "model" in occ or "excluded" in occ:
-            continue
-        units.append(
-            {
-                "plan": (unit.unit_type or "unknown").strip() or "unknown",
-                "vacant": bool(unit.vacant_on(as_of)),
-            }
-        )
-    result = VacancyAgent().run(units, floor_plan=floor_plan)
-    turn_ctx.record("ask_vacancy_agent", {"floor_plan": floor_plan}, result)
-    return json.dumps(result)
+    return _capability("ask_vacancy_agent", {"floor_plan": floor_plan})
 
 
 def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
-    """Call the live vacancy prediction agent (MCP :8000) for a forward outlook.
+    """Call the capabilities gateway ask_prediction_agent for a forward outlook.
 
     When: forecast occupancy, lease expirations, MTM waterfall, rollover,
     loss-to-lease, or predicted income. Also when the Predict occupancy chip
     is on and the last message is forward-looking. Also when THIS message is
     a plan name or renovated yes/no after that agent asked which group.
     When not: current occupancy or in-place rent (query_units / compute_income),
-    floor-plan vacant probability (ask_vacancy_agent — in-process logistic,
-    not vacancy MCP ask_vacancy), map, weather.
-    How: MCP streamable HTTP {RR_PREDICT_URL}/mcp tool ask_vacancy with
-    {question, session_id} (session reuse per username). First call forwards
-    THIS user question plus do not parse/train — do not invent a building.
-    A later-turn follow-up sends the user's short reply. Never /api/chat,
-    never upload or train. If :8000 has no fit or asks which plan, return
-    that text so the Book can quote it and stop this turn — do not score
-    the vault roll and do not call again with a guessed plan.
+    floor-plan vacant probability (ask_vacancy_agent), map, weather.
+    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool ask_prediction_agent with
+    this call's horizon_months and question. The gateway forwards to the vacancy
+    app MCP ask_vacancy. Pass THIS user question. Do not invent a building.
+    Never upload or train. If the gateway says the building is not trained or
+    asks which plan, quote that text and stop this turn — do not call again
+    with a guessed plan.
+    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
+    gateway is required.
     """
-    from cre_rentroll.predict_client import forecast, this_turn_clarify_result, vault_facts
+    from cre_rentroll.predict_followup import this_turn_clarify_result
 
     prior = this_turn_clarify_result()
     if prior:
@@ -1470,26 +1302,10 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
             "same_turn_stop": True,
         }
         return json.dumps(payload)
-
-    user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
-    months = int(horizon_months or 12)
-    asked = (question or "").strip() or (turn_ctx.eval_query() or "").strip()
-    ctx = None
-    try:
-        roll = _roll()
-        ctx = vault_facts(roll, turn_ctx.asked_as_of() or roll.as_of)
-    except Exception:
-        ctx = None
-    try:
-        result = forecast(user, asked, horizon_months=months, vault=ctx)
-    except Exception as exc:  # noqa: BLE001 — surface a tool error, do not crash the turn
-        result = {"ok": False, "error": str(exc), "source": "vacancy-prediction-agent"}
-    turn_ctx.record(
+    return _capability(
         "ask_prediction_agent",
-        {"horizon_months": months, "question": asked},
-        result,
+        {"horizon_months": int(horizon_months or 12), "question": (question or "").strip()},
     )
-    return json.dumps(result)
 
 
 TOOL_IMPLS: dict[str, Any] = {

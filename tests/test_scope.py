@@ -1,3 +1,5 @@
+import json
+
 import cre_rentroll.scope as scope_mod
 from cre_rentroll.agents import BOOK
 from cre_rentroll.harness import run_task
@@ -163,9 +165,18 @@ def test_run_task_greeting_agent_oos(monkeypatch):
 def test_run_task_need_file_vault_gate_no_extra_llm(monkeypatch):
     _stub_vault(monkeypatch)
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    from cre_rentroll.scope import NEED_FILE_TEXT
     from cre_rentroll.tools import query_units
 
     captured: dict[str, str] = {}
+
+    def fake_gateway(name, arguments, timeout=180.0):
+        return json.dumps(
+            {"need_file": True, "ok": True, "message": NEED_FILE_TEXT, "tool": name}
+        )
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake_gateway)
 
     def fake_agent(*_a, **_k):
         captured["t"] = query_units()

@@ -8,7 +8,6 @@ from cre_rentroll.harness import run_task, session_prompt
 from cre_rentroll.run_events import annotate_message, bind, reset, tool_message
 from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
 from cre_rentroll.tools import (
-    HEADLINE_COUNTS_NOTE,
     TOOL_IMPLS,
     compute_income,
     create_plan,
@@ -887,69 +886,48 @@ def test_react_turn_task_suffix_maps_phrase_like_update_plan_status():
     assert react_turn_task_suffix(["compute_income"], None) == ""
 
 
-def test_query_units_payload_includes_roll_mtm_count(monkeypatch):
-    reset_turn("tester")
-    occupied = [
-        UnitRow(unit_id=str(i), in_place_rent=800, vacant=False, occupancy="Occupied")
-        for i in range(151)
-    ]
-    vacant = [
-        UnitRow(unit_id=f"v{i}", in_place_rent=0, vacant=True, occupancy="Vacant")
-        for i in range(13)
-    ]
-    roll = CanonicalRentRoll(
-        layout="one_row",
-        property_name="Hill",
-        units=occupied + vacant,
-    )
-    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    payload = json.loads(query_units())
-    assert payload["unit_count"] == 164
-    assert payload["occupied_count"] == 151
-    assert payload["vacant_count"] == 13
-    assert payload["occupancy_pct"] == round(151 / 164, 4)
-    assert payload["mtm_count"] == roll.mtm_count == 0
-    assert payload["avg_sqft"] is None
-    assert payload["sqft_n"] == 0
-    assert payload["note"] == HEADLINE_COUNTS_NOTE
-    assert "complete in this result" in payload["note"]
-    assert "list a filtered subset of unit rows" in payload["note"].lower()
-    assert "not to re-fetch counts" in payload["note"]
-    income = json.loads(compute_income())
-    assert income["mtm_count"] == payload["mtm_count"]
-    assert income["in_place_monthly"] == 151 * 800
-    assert income["mean_occupied_rent"] == 800.0
-    assert income["vacant_asking_monthly"] == 0.0
-    assert income["estimated_full_occupancy_monthly"] == 164 * 800
-    assert "occupied units only" in income["note"]
-    filtered = json.loads(query_units(vacant_only=True))
-    assert filtered["mtm_count"] == roll.mtm_count
-    assert filtered["vacant_count"] == 13
-    assert len(filtered["units"]) == 13
-    assert "note" not in filtered
-    occ = json.loads(query_units(occupancy="Vacant"))
-    assert "note" not in occ
-    assert occ["occupied_count"] == 151
-    assert occ["vacant_count"] == 13
+def test_vault_tools_post_to_deal_mcp_and_have_no_local_math(monkeypatch):
+    import inspect
 
+    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED
 
-def test_query_units_returns_avg_sqft_of_positive_sizes(monkeypatch):
-    reset_turn("tester")
-    units = [
-        UnitRow(unit_id="1", sqft=700, in_place_rent=1000, vacant=False, occupancy="Occupied"),
-        UnitRow(unit_id="2", sqft=800, in_place_rent=1100, vacant=False, occupancy="Occupied"),
-        UnitRow(unit_id="3", sqft=0, in_place_rent=0, vacant=True, occupancy="Vacant"),
-        UnitRow(unit_id="4", sqft=None, in_place_rent=900, vacant=False, occupancy="Occupied"),
-    ]
-    roll = CanonicalRentRoll(layout="one_row", property_name="La Cordoba", units=units)
-    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    payload = json.loads(query_units())
-    assert payload["avg_sqft"] == 750.0
-    assert payload["sqft_n"] == 2
-    assert payload["units"][0]["sqft"] == 700
-    assert "avg_sqft" in payload["note"]
-    vacant = json.loads(query_units(vacant_only=True))
-    assert vacant["avg_sqft"] is None
+    reset_turn("ada")
+    monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
+    missing = json.loads(query_units())
+    assert missing["ok"] is False
+    assert "capabilities gateway is required" in missing["error"]
+    assert missing["error"] == GATEWAY_REQUIRED
+
+    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    seen: list[dict] = []
+
+    def fake(name, arguments, timeout=180.0):
+        seen.append({"name": name, "arguments": arguments})
+        if name == "query_units":
+            return json.dumps({"unit_count": 164, "ok": True})
+        return json.dumps({"in_place_monthly": 120800, "ok": True})
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
+    assert json.loads(query_units(vacant_only=True))["unit_count"] == 164
+    assert json.loads(compute_income(vacant_fill_rent=5000))["in_place_monthly"] == 120800
+    assert seen[0]["name"] == "query_units"
+    assert seen[0]["arguments"]["vacant_only"] is True
+    assert seen[0]["arguments"]["username"] == "ada"
+    assert seen[1]["name"] == "compute_income"
+    assert seen[1]["arguments"]["vacant_fill_rent"] == 5000
+    def _code(fn) -> str:
+        src = inspect.getsource(fn)
+        if '"""' in src:
+            _, _, rest = src.partition('"""')
+            _, _, rest = rest.partition('"""')
+            return rest
+        return src
+
+    code = _code(query_units) + _code(compute_income)
+    assert code.count("return _capability(") == 2
+    assert "load_roll" not in code
+    assert "in_place_monthly" not in code
+    assert "nominatim" not in code.lower()
 
 
 def test_avg_sqft_skill_and_gold_case():
@@ -1224,59 +1202,22 @@ def test_run_task_passes_session_history_into_agent(monkeypatch):
     assert "Answer the last User message" in blob
 
 
-def test_compute_income_full_occupancy_uses_vacant_asking(monkeypatch):
-    reset_turn("tester")
-    roll = CanonicalRentRoll(
-        layout="one_row",
-        property_name="Bay",
-        units=[
-            UnitRow(unit_id="1", in_place_rent=1000, vacant=False, occupancy="Occupied"),
-            UnitRow(unit_id="2", in_place_rent=1000, vacant=False, occupancy="Occupied"),
-            UnitRow(
-                unit_id="3",
-                in_place_rent=0,
-                vacant=True,
-                occupancy="Vacant",
-                charge_codes={"_market_rent": 1200},
-            ),
-        ],
-    )
-    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    income = json.loads(compute_income())
-    assert income["in_place_monthly"] == 2000
-    assert income["mean_occupied_rent"] == 1000.0
-    assert income["vacant_asking_monthly"] == 1200.0
-    assert income["estimated_full_occupancy_monthly"] == 3200.0
-    assert "vacant_asking" in income["estimated_full_occupancy_method"]
-
-
-def test_compute_income_vacant_fill_rent_scenario(monkeypatch):
-    reset_turn("tester")
-    occupied = [
-        UnitRow(unit_id=str(i), in_place_rent=800, vacant=False, occupancy="Occupied")
-        for i in range(151)
-    ]
-    vacant = [
-        UnitRow(unit_id=f"v{i}", in_place_rent=0, vacant=True, occupancy="Vacant")
-        for i in range(13)
-    ]
-    roll = CanonicalRentRoll(layout="one_row", property_name="Hill", units=occupied + vacant)
-    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    income = json.loads(compute_income(vacant_fill_rent=5000))
-    assert income["in_place_monthly"] == 151 * 800
-    assert income["in_place_annual"] == 151 * 800 * 12
-    assert income["vacant_fill_rent"] == 5000
-    assert income["vacant_fill_monthly"] == 13 * 5000
-    assert income["vacant_fill_annual"] == 13 * 5000 * 12
-    assert income["scenario_full_occupancy_monthly"] == 151 * 800 + 13 * 5000
-    assert income["scenario_full_occupancy_annual"] == (151 * 800 + 13 * 5000) * 12
+def test_vault_calc_accepts_gateway_income_result():
     from cre_rentroll.eval_service import vault_calc_ok
 
-    draft = (
-        "If all units are occupied, including the 13 vacant units at $5,000 per month, "
-        f"the total annual income would be ${income['scenario_full_occupancy_annual']:,.0f}, "
-        f"including in-place ${income['in_place_annual']:,.0f} plus "
-        f"${income['vacant_fill_annual']:,.0f} from vacant fill."
+    roll = CanonicalRentRoll(
+        layout="one_row",
+        property_name="Hill",
+        units=[UnitRow(unit_id="1", in_place_rent=800, vacant=False, occupancy="Occupied")],
     )
-    traces = [{"name": "compute_income", "result": income}]
-    assert vault_calc_ok(draft, roll, traces) is not False
+    income = {
+        "in_place_annual": 9600,
+        "vacant_fill_annual": 60000,
+        "scenario_full_occupancy_annual": 69600,
+    }
+    draft = (
+        "If all units are occupied, the total annual income would be $69,600, "
+        "including in-place $9,600 plus $60,000 from vacant fill."
+    )
+    assert vault_calc_ok(draft, roll, [{"name": "compute_income", "result": income}]) is not False
+

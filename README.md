@@ -86,6 +86,6 @@ Strands is the agent **framework** (chat loop stays `run_agent` on Runtime). **A
 
 Resident names on La Cordoba are stripped at ingest and should not be committed.
 
-## Occupancy forecast (`:8000`)
+## Capability tools
 
-`ask_prediction_agent` calls streamable-HTTP MCP `{RR_PREDICT_URL}/mcp` (default `http://127.0.0.1:8000/mcp`) tool `ask_vacancy` with `{question, session_id}` (one uuid reused per username). Rentroll never posts `/api/chat`, never uploads a file, and never trains that agent. Train only in the vacancy-agent UI (file picker + Send rent roll). If the building has no fit, surface that reply.
+`query_units`, `compute_income`, `compute_noi`, `compute_cap_rate`, `osm_geocode`, `web_search`, `publish_memo`, `ask_vacancy_agent`, and `ask_prediction_agent` POST `{CAPABILITIES_GATEWAY_URL}/mcp/deal`. The deal process does not run that math. `ask_prediction_agent` is forwarded by the gateway to the vacancy app's `ask_vacancy` MCP tool. `ask_vacancy_agent` scores floor plans on the vault roll inside the gateway. Harness tools (`create_plan`, `update_plan`, `update_plan_status`, `reflection`, `score_gcr`) stay in this process. If `CAPABILITIES_GATEWAY_URL` is unset, the nine tools return an error that the capabilities gateway is required.
