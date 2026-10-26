@@ -1,9 +1,12 @@
 export function fillChipPrompt(prompt, vault) {
+  const raw = String(prompt || "");
+  // Occupancy-only chip: leave {{Property Name}} for the user to complete.
+  if (raw.includes("{{Property Name}}")) {
+    return raw;
+  }
   const name = vault?.property_name || "this property";
   const asOf = vault?.as_of || "the roll as-of";
-  return String(prompt || "")
-    .replaceAll("{property_name}", name)
-    .replaceAll("{as_of}", asOf);
+  return raw.replaceAll("{property_name}", name).replaceAll("{as_of}", asOf);
 }
 
 export const DEMO_CHIPS = [
@@ -20,7 +23,7 @@ export const DEMO_CHIPS = [
     level: "predict-ok",
     label: "Predict occupancy",
     searchFail: false,
-    prompt: "What occupancy do you predict for {property_name}?",
+    prompt: "What occupancy do you predict for {{Property Name}}",
   },
   {
     id: "multi-1",

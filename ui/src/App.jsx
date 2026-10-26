@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { compactRunLog } from "./compactRunLog";
 import { DEMO_CHIPS, fillChipPrompt } from "./demoChips";
 import { logMessageParts } from "./boldToolNames";
+import EvalPage from "./EvalPage";
 
 const KEY = "cre-rentroll-username";
 const FETCH_MS = 40_000;
@@ -230,6 +231,7 @@ export default function App() {
   const [logExpanded, setLogExpanded] = useState(false);
   const [logCopied, setLogCopied] = useState(false);
   const [logCompact, setLogCompact] = useState(true);
+  const [view, setView] = useState("chat");
   const copyTimer = useRef(null);
   const bottom = useRef(null);
   const logEnd = useRef(null);
@@ -337,7 +339,11 @@ export default function App() {
   function fillChip(chip) {
     if (busy) return;
     disarmCompactLog();
-    setText(fillChipPrompt(chip.prompt, session?.vault));
+    setText(
+      chip.id === "predict_occupancy_only"
+        ? chip.prompt
+        : fillChipPrompt(chip.prompt, session?.vault),
+    );
     setSearchFail(Boolean(chip.searchFail));
     setChipId(chip.id || "");
     setError("");
@@ -457,9 +463,11 @@ export default function App() {
   const msgs = session?.messages || [];
   const pending = session?.pending_hitl;
   const vaultExpanded = vaultOpen;
+  const showEval = view === "eval";
 
   return (
-    <div className={`shell${logExpanded ? " log-fs" : ""}`}>
+    <>
+    <div className={`shell${logExpanded ? " log-fs" : ""}`} hidden={showEval}>
       <header>
         <div>
           <p className="eyebrow">CRE Deal Rentroll</p>
@@ -470,6 +478,9 @@ export default function App() {
             {username}
             {session?.vault ? ` · ${session.vault.property_name || "vaulted"} (${session.vault.unit_count} u)` : " · no roll yet"}
           </span>
+          <button className="ghost" onClick={() => setView("eval")} type="button">
+            Gold eval
+          </button>
           <button className="ghost" onClick={logout} type="button">
             Switch user
           </button>
@@ -721,5 +732,7 @@ export default function App() {
         </div>
       </form>
     </div>
+    <EvalPage username={username} hidden={!showEval} onBack={() => setView("chat")} />
+    </>
   );
 }

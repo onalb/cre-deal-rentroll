@@ -2,6 +2,7 @@
 __pycache__/
 .env
 data/deals/*/units.json
+data/gold/
 *.pyc
 .pytest_cache/
 .cursor/*.log

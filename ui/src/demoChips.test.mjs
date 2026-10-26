@@ -63,13 +63,14 @@ assert.equal(predictOnly.label, "Predict occupancy");
 assert.equal(predictOnly.level, "predict-ok");
 assert.equal(
   predictOnly.prompt,
-  "What occupancy do you predict for {property_name}?",
+  "What occupancy do you predict for {{Property Name}}",
 );
 assert.doesNotMatch(predictOnly.prompt, /as of/i);
+assert.doesNotMatch(predictOnly.prompt, /\{property_name\}|\{as_of\}/);
 assert.doesNotMatch(predictOnly.prompt, /expir|MTM|income at risk|loss-to-lease/i);
 assert.equal(
   fillChipPrompt(predictOnly.prompt, { property_name: "La Cordoba", as_of: "2024-06-01" }),
-  "What occupancy do you predict for La Cordoba?",
+  "What occupancy do you predict for {{Property Name}}",
 );
 assert.equal(predictOnly.searchFail, false);
 

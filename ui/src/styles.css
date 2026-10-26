@@ -30,6 +30,7 @@ button.ghost {
   border: 1px solid var(--line);
 }
 .shell { max-width: 1280px; margin: 0 auto; padding: 1.5rem; min-height: 100vh; display: flex; flex-direction: column; }
+.shell[hidden] { display: none; }
 .login-shell { display: grid; place-items: center; }
 .card { background: var(--card); border: 1px solid var(--line); padding: 2rem; max-width: 28rem; }
 .eyebrow { letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.72rem; color: var(--accent); margin: 0; }
@@ -393,6 +394,61 @@ button.chip.on {
   box-shadow: inset 0 0 0 1px var(--chip);
 }
 .row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
+button:disabled { opacity: 0.6; cursor: default; }
+.eval-panel { background: var(--card); border: 1px solid var(--line); padding: 1.25rem; }
+.eval-panel label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+.eval-panel input[type="number"] { width: 5rem; padding: 0.45rem 0.5rem; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.eval-status { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--muted); }
+.eval-table { width: 100%; border-collapse: collapse; margin-top: 1.25rem; font-size: 0.92rem; }
+.eval-table th, .eval-table td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line); }
+.eval-table th { color: var(--muted); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.eval-log { margin: 1rem 0 0; padding-left: 1.2rem; color: var(--ink); }
+.eval-log li { margin: 0.35rem 0; }
+.eval-table td.case-open { position: relative; z-index: 3; }
+.case-anchor { position: relative; display: inline-block; }
+button.case-name {
+  background: transparent;
+  color: var(--accent);
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+button.case-name:hover,
+button.case-name[aria-expanded="true"] {
+  color: var(--ink);
+}
+.case-tip {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  top: calc(100% + 0.35rem);
+  width: min(28rem, 70vw);
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  padding: 0.75rem 0.85rem 0.65rem;
+  box-shadow: 0 10px 28px rgba(28, 25, 21, 0.14);
+}
+.case-tip p {
+  margin: 0 0 0.65rem;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+button.case-tip-close {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 0.22rem 0.65rem;
+  font-size: 0.8rem;
+}
+button.case-tip-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .file { font-size: 0.85rem; color: var(--muted); }
 .file input { display: block; margin-top: 0.2rem; }
 .fname { font-size: 0.85rem; }

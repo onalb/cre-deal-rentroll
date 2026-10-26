@@ -8,7 +8,8 @@ ui/dist
 README.md
 ARCHITECTURE.md
 docs
-tests
+tests/*
+!tests/gold.json
 data/debug
 .cursor
 .pytest_cache
