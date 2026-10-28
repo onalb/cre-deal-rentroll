@@ -200,19 +200,22 @@ export default function EvalPage({ username, onBack, hidden = false }) {
   const rows = mergeRows(cases, summary);
 
   return (
-    <div className="shell" hidden={hidden}>
-      <header>
-        <div>
-          <p className="eyebrow">CRE Deal Rentroll</p>
-          <h1>Gold eval</h1>
-        </div>
-        <div className="who">
-          <span>{username}</span>
-          <button className="ghost" type="button" onClick={onBack}>
-            Deal chat
-          </button>
+    <div className="app" hidden={hidden}>
+      <header className="banner">
+        <div className="banner-inner">
+          <div>
+            <h1>Gold eval</h1>
+            <p>Score each gold case with the live judge.</p>
+          </div>
+          <div className="who">
+            <span>{username}</span>
+            <button className="ghost" type="button" onClick={onBack}>
+              Deal chat
+            </button>
+          </div>
         </div>
       </header>
+      <main>
       <section className="eval-panel">
         <p className="lede">
           Each start uploads {FILE_NAME} through the same ingest as chat, then runs
@@ -300,6 +303,7 @@ export default function EvalPage({ username, onBack, hidden = false }) {
           ))}
         </ol>
       </section>
+      </main>
     </div>
   );
 }

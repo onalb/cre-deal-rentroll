@@ -408,34 +408,30 @@ export default function App() {
 
   return (
     <>
-    <div className={`shell${logExpanded ? " log-fs" : ""}`} hidden={showEval}>
-      <header>
-        <div>
-          <p className="eyebrow">CRE Deal Rentroll</p>
-          <h1>Deal chat</h1>
-        </div>
-        <div className="who">
-          <span>
-            {username}
-            {session?.vault ? ` · ${session.vault.property_name || "vaulted"} (${session.vault.unit_count} u)` : " · no roll yet"}
-          </span>
-          <button className="ghost" onClick={() => setView("eval")} type="button">
-            Gold eval
-          </button>
-          <button className="ghost" onClick={logout} type="button">
-            Switch user
-          </button>
+    <div className={`app${logExpanded ? " log-fs" : ""}`} hidden={showEval}>
+      <header className="banner">
+        <div className="banner-inner">
+          <div>
+            <h1>Deal chat</h1>
+            <p>Attach a rent roll, then ask about units, location, or income.</p>
+          </div>
+          <div className="who">
+            <span>
+              {username}
+              {session?.vault ? ` · ${session.vault.property_name || "vaulted"} (${session.vault.unit_count} u)` : " · no roll yet"}
+            </span>
+            <button className="ghost" onClick={() => setView("eval")} type="button">
+              Gold eval
+            </button>
+            <button className="ghost" onClick={logout} type="button">
+              Switch user
+            </button>
+          </div>
         </div>
       </header>
 
       <main>
         <section className="transcript">
-          {msgs.length === 0 && (
-            <div className="empty">
-              Attach a rent-roll spreadsheet, then ask about units, location, or income.
-              Everyday chat, greetings, and weather are out of scope.
-            </div>
-          )}
           {msgs.map((m, i) => (
             <article key={i} className={`msg ${m.role} ${m.kind || ""}`}>
               <pre>{displayContent(m)}</pre>
@@ -583,14 +579,7 @@ export default function App() {
             aria-label={logCopied ? "Copied" : "Copy run log"}
             onClick={copyRunLog}
           >
-            {logCopied ? (
-              <span className="runlog-copied">Copied</span>
-            ) : (
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                <rect x="5.5" y="1.5" width="9" height="11" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.25" />
-                <path d="M3.5 4.5H2.7A1.2 1.2 0 0 0 1.5 5.7v8.1A1.2 1.2 0 0 0 2.7 15h8.1a1.2 1.2 0 0 0 1.2-1.2v-.8" fill="none" stroke="currentColor" strokeWidth="1.25" />
-              </svg>
-            )}
+            {logCopied ? "Copied" : "Copy"}
           </button>
           <button
             type="button"
@@ -600,15 +589,7 @@ export default function App() {
             aria-pressed={logExpanded}
             onClick={toggleLogExpand}
           >
-            {logExpanded ? (
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                <path d="M4 4l8 8M12 4L4 12" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                <path d="M5.5 2.5H2.5v3M10.5 2.5h3v3M5.5 13.5H2.5v-3M10.5 13.5h3v-3" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
+            Expand
           </button>
           <button
             type="button"
