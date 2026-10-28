@@ -14,8 +14,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from cre_rentroll.settings import openai_api_key
-from cre_rentroll import dynamo, harness, hitl, run_events, turn_ctx, vault
-from cre_rentroll.gold_eval import MAX_RUNS, case_prompts, iter_gold
+from cre_rentroll import dynamo, harness, run_events, vault
+from gold_eval.routes import router as gold_eval_router
 from cre_rentroll.memory import retrieve_facts
 
 
@@ -31,6 +31,7 @@ def _cors_origins() -> list[str]:
 
 
 app = FastAPI(title="CRE Deal Rentroll", version="0.1.0", lifespan=lifespan)
+app.include_router(gold_eval_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -41,14 +42,6 @@ app.add_middleware(
 
 class LoginBody(BaseModel):
     username: str
-
-
-class HitlBody(BaseModel):
-    allow: bool
-
-
-class EvalBody(BaseModel):
-    runs: int = 3
 
 
 def _user(x_username: str | None) -> str:
@@ -92,7 +85,7 @@ def login(body: LoginBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     sess = vault.load_session(profile["username"])
-    return {**profile, "pending_hitl": sess.get("pending_hitl")}
+    return {**profile, "messages": sess.get("messages")}
 
 
 @app.get("/api/session")
@@ -103,9 +96,7 @@ def session(x_username: str | None = Header(default=None)) -> dict[str, Any]:
     return {
         "username": user,
         "messages": sess.get("messages"),
-        "pending_hitl": sess.get("pending_hitl"),
         "facts": retrieve_facts(user),
-        "memos": vault.list_memos(user),
         "vault": None
         if roll is None
         else {
@@ -131,7 +122,6 @@ def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, A
     last["history"] = sess.get("messages")
     last["all"] = list(outcomes)
     last["facts"] = retrieve_facts(user)
-    last["memos"] = vault.list_memos(user)
     roll = vault.load_roll(user)
     last["vault"] = (
         None
@@ -142,7 +132,6 @@ def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, A
             "geo_confidence": roll.geo_confidence,
         }
     )
-    last["pending_hitl"] = last.get("pending_hitl") or sess.get("pending_hitl")
     return last
 
 
@@ -255,58 +244,3 @@ async def chat(
             "Connection": "keep-alive",
         },
     )
-
-
-@app.get("/api/eval/cases")
-def eval_cases(x_username: str | None = Header(default=None)) -> list[dict[str, str]]:
-    _user(x_username)
-    return case_prompts()
-
-
-@app.post("/api/eval/run")
-async def eval_run(body: EvalBody, x_username: str | None = Header(default=None)):
-    user = _user(x_username)
-    if body.runs < 1 or body.runs > MAX_RUNS:
-        raise HTTPException(400, f"runs must be from 1 to {MAX_RUNS}")
-    q: queue.Queue[dict[str, Any] | None] = queue.Queue()
-
-    def work() -> None:
-        try:
-            for event in iter_gold(user, body.runs):
-                q.put(event)
-        except Exception as exc:
-            q.put({"event": "error", "message": f"{type(exc).__name__}: {exc}"})
-        finally:
-            q.put(None)
-
-    threading.Thread(target=work, daemon=True).start()
-
-    async def gen():
-        while True:
-            item = await asyncio.to_thread(q.get)
-            if item is None:
-                break
-            yield _sse_pack(str(item.get("event") or "status"), item)
-
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
-
-
-@app.post("/api/hitl")
-def hitl_resolve(body: HitlBody, x_username: str | None = Header(default=None)) -> dict[str, Any]:
-    user = _user(x_username)
-    sess = vault.load_session(user)
-    msgs = list(sess.get("messages") or [])
-    turn_ctx.reset_turn(user, hitl_allow=body.allow)
-    result = hitl.resolve(user, body.allow, msgs)
-    kind = "hitl_denied" if result["status"] == "denied" else "answer"
-    msgs.append({"role": "assistant", "content": result["text"], "kind": kind})
-    vault.save_session(user, msgs, pending_hitl=None)
-    return {**result, "kind": kind, "history": msgs, "memos": vault.list_memos(user)}

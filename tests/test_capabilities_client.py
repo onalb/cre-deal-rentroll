@@ -24,7 +24,7 @@ from cre_rentroll.turn_ctx import reset_turn
 
 def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
-    names = filter_book_tools(BOOK.tool_names, "", "how many units")
+    names = filter_book_tools(BOOK.tool_names, "how many units")
     assert "ask_vacancy_agent" in names
     assert "ask_prediction_agent" not in names
     assert "ask_vacancy" not in names
@@ -36,7 +36,7 @@ def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
 
 def test_menu_keeps_the_same_names_when_gateway_is_set(monkeypatch):
     monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
-    names = filter_book_tools(BOOK.tool_names, "", "how many units")
+    names = filter_book_tools(BOOK.tool_names, "how many units")
     assert "ask_vacancy_agent" in names
     assert "ask_vacancy" not in names
     assert "create_plan" in names

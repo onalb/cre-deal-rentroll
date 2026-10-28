@@ -1,4 +1,4 @@
-from cre_rentroll.gold_eval import (
+from gold_eval import (
     case_prompts,
     case_query,
     expected_tools,

@@ -64,24 +64,7 @@ WORK_TOOL_NAMES = frozenset(
         "ask_prediction_agent",
         "osm_geocode",
         "web_search",
-        "publish_memo",
     }
-)
-MEMO_PUBLISH_RULE = (
-    "If THIS last message asks to create or publish a memo, or is proceed / yes after "
-    "a memo ask, the first (and typically only) work tool is publish_memo with title+body "
-    "synthesizing THIS session (all properties/deals in prior User/Assistant turns), "
-    "not only the current FACT# roll. Python does not write the memo text. The ONLY "
-    "allowed first work tool is real MCP publish_memo — NEVER print functions.publish_memo "
-    "JSON, recipient_name tool JSON, or 'Let's proceed'. A one-item create_plan is fine; "
-    "then IMMEDIATELY call the tool the same turn if possible; do not dump the memo as "
-    "chat before the tool; do not extra create_plan loops. After publish_memo, stop for "
-    "HITL — do not score_gcr the memo body as the answer. After HITL Approve, memos "
-    "persist as Dynamo MEMO# on this user (listed in FACTS). If THIS last message asks "
-    "for saved memos, vault notes, or a published memo already in FACTS, answer only "
-    "from those MEMO# rows — do not call publish_memo, and do not treat prior chat "
-    "as the vault memo. If FACTS has no MEMO# rows, say none are published after "
-    "HITL Approve — do not reconstruct a memo from session numbers."
 )
 _HEADLINE_COUNT_RE = re.compile(
     r"\b(unit_count|unit count|occupied_count|vacant_count|occupancy_pct|"
@@ -95,7 +78,7 @@ _LIST_UNITS_RE = re.compile(
 )
 _NON_HEADLINE_TOOLS_RE = re.compile(
     r"\b(compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_vacancy|ask_prediction_agent|osm_geocode|web_search|"
-    r"publish_memo|score_gcr|reflection)\b",
+    r"score_gcr|reflection)\b",
     re.I,
 )
 # Checklist prose → vault tool (exact snake_case names are matched first).
@@ -719,15 +702,7 @@ def create_plan(tasks: str) -> str:
     work tool — not per comma in the user sentence. A one-item checklist is fine
     when that one tool answers the whole last message (this-deal occupancy only →
     query_units; map-only → osm_geocode; vacant-only → query_units; definition of
-    a rent roll → web_search; create/publish a memo → the first (and typically
-    only) work tool is publish_memo with title+body synthesizing THIS session
-    — all properties/deals in prior User/Assistant turns — not only the current
-    FACT# roll; Python does not write the memo text; NEVER print
-    functions.publish_memo JSON or 'Let's proceed'; a one-item create_plan is
-    fine; then IMMEDIATELY call publish_memo the same turn if possible; do not
-    dump the memo as chat before the tool; do not extra create_plan loops;
-    proceed / yes after a memo ask still means publish_memo, not another plan;
-    average property value in that area / metro / comps / area/market
+    a rent roll → web_search; average property value in that area / metro / comps / area/market
     facts → web_search; zip/city in the message is enough; in that area uses last
     geocode/address_hint; one web_search). Only if THIS last message asks for
     map AND month-to-month AND cap: list osm_geocode, query_units, and
@@ -741,11 +716,6 @@ def create_plan(tasks: str) -> str:
     sentence for that follow-up. Never
     osm_geocode / compute_cap_rate / compute_noi unless THIS last message asked.
     Tag the current step [in_progress], the rest [pending].
-
-    Recalling saved memos / vault notes / a published memo already in FACTS is
-    in-scope CRE: answer from MEMO# rows (or say none published after HITL);
-    do not list publish_memo unless they asked to create a new one; do not treat
-    chat history as the vault memo.
 
     WHEN NOT: Talking to the agent as a person or idle chat (identity, greetings,
     the agent's name, chitchat) — do not call this tool. Idle weekend weather is
@@ -789,7 +759,7 @@ def update_plan(tasks: str) -> str:
     the draft was off-topic deal numbers, do not add vault calculators or
     osm_geocode — rewrite a cited definition (web_search if needed).
 
-    WHEN NOT: After a successful vault/search/geocode/memo hit just to mark
+    WHEN NOT: After a successful vault/search/geocode hit just to mark
     [completed] — that is update_plan_status. Do not use this as the first tool
     (create_plan first). Weather / identity / greetings / chitchat: no plan tools.
 
@@ -803,7 +773,7 @@ def update_plan(tasks: str) -> str:
 def update_plan_status(tasks: str) -> str:
     """Update statuses on the existing ReAct checklist. Does not replace the list.
 
-    WHEN TO USE: Immediately after a real vault/search/geocode/memo tool (or after
+    WHEN TO USE: Immediately after a real vault/search/geocode tool (or after
     a reflection that changed statuses). Send the SAME items with that step
     [completed] (or [incomplete] if the tool could not answer) and the next
     [in_progress]. Status-only is the main job.
@@ -898,8 +868,6 @@ def _capability(name: str, arguments: dict[str, Any]) -> str:
         asked = turn_ctx.asked_as_of()
         if asked:
             remote_args["as_of"] = asked
-    if name == "publish_memo":
-        remote_args["hitl_allow"] = bool(turn_ctx.hitl_allowed())
     if name == "web_search" and (
         turn_ctx.search_should_fail() or os.environ.get("CRE_FORCE_SEARCH_FAIL") == "1"
     ):
@@ -1056,43 +1024,11 @@ def web_search(query: str, max_results: int = 5) -> str:
     return _capability("web_search", {"query": query, "max_results": max_results})
 
 
-def publish_memo(title: str, body: str) -> str:
-    """Write an underwriting memo (sensitive) through the capabilities gateway.
-
-    When: only when the user asks to create/publish/save a memo (Q-hitl). The
-    first (and typically only) work tool is publish_memo — call it before any
-    user-facing memo text. NEVER print functions.publish_memo JSON or
-    'Let's proceed'. A one-item create_plan is fine; then IMMEDIATELY call the
-    tool the same turn if possible; do not dump the memo as chat before the
-    tool; do not extra create_plan loops. Proceed / yes after a memo ask still
-    means this tool, not another plan dump.
-    What: you supply title and body in the tool args. Body must synthesize THIS
-    session — every property/deal discussed in prior User/Assistant turns — not
-    only the current FACT# / VAULT#default roll. Do not omit earlier deals in
-    this chat just because a later roll is loaded. Python does not write the
-    memo text.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool publish_memo.
-    HITL must approve in the UI before this publishes. Session stores
-    pending_hitl (title + body). After Approve, the gateway persists title/body/ts
-    as MEMO#{ts} on USER#{username}. Python does not draft or rewrite the body.
-    Later asks for a saved / published memo or vault notes answer only from those
-    MEMO# rows in harness facts — never republish, and never treat prior chat as
-    the vault memo. If no MEMO# rows, say none are published after HITL Approve.
-    When not: answering abstracts, maps, or cap-rate questions with no memo ask;
-    do not score_gcr the memo body as the answer instead of this tool.
-    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
-    gateway is required.
-    """
-    return _capability("publish_memo", {"title": title, "body": body})
-
-
 def score_gcr(draft: str) -> str:
     """Score the sentence you would show the user (G / request-C / R + vault_calc).
 
     WHEN TO USE: SELF-CHECK before the user-facing answer. Required before text-only
-    end_turn on a CRE/rent-roll answer — except create/publish memo: the first
-    (and typically only) work tool is publish_memo; do not dump the memo as chat
-    or score_gcr it before the tool. Call once with the exact sentence you would
+    end_turn on a CRE/rent-roll answer. Call once with the exact sentence you would
     show. Forbidden to stop with a sentence and no score_gcr. If min(G, request_C) <= 2,
     need_replan, then score_gcr again. Do not add vault calculators when the ask is a
     CRE definition and the draft was off-topic deal numbers — rewrite a cited
@@ -1117,12 +1053,12 @@ def score_gcr(draft: str) -> str:
     Intelligence is in choosing WHEN; this body runs the live judge + vault_calc_ok.
     """
     from cre_rentroll.eval_service import (
-        live_judge,
         need_replan_hint,
         prediction_clarify_draft,
         vault_calc_invented_hits,
         vault_calc_log_label,
     )
+    from cre_rentroll.score_gcr_lambda import judge
 
     text = str(draft or "").strip()
     query = turn_ctx.eval_query() or ""
@@ -1135,7 +1071,8 @@ def score_gcr(draft: str) -> str:
             roll = vault.load_roll(user)
     traces = list(turn_ctx.traces())
     before = turn_ctx.llm_call_kinds().count("judge")
-    scores = live_judge(query, text, roll, traces)
+    # Session stays here. The handler only runs live_judge.
+    scores = judge(query, text, roll, traces)
     if scores.judge == "llm":
         turn_ctx.add_llm_if_unchanged("judge", before)
     clarify = prediction_clarify_draft(text, traces)
@@ -1208,9 +1145,8 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
     """Call the capabilities gateway ask_prediction_agent for a forward outlook.
 
     When: forecast occupancy, lease expirations, MTM waterfall, rollover,
-    loss-to-lease, or predicted income. Also when the Predict occupancy chip
-    is on and the last message is forward-looking. Also when THIS message is
-    a plan name or renovated yes/no after that agent asked which group.
+    loss-to-lease, or predicted income. Also when THIS message is a plan
+    name or renovated yes/no after that agent asked which group.
     When not: current occupancy or in-place rent (query_units / compute_income),
     floor-plan vacant probability (ask_vacancy_agent), map, weather.
     How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool ask_prediction_agent with
@@ -1251,7 +1187,6 @@ TOOL_IMPLS: dict[str, Any] = {
     "compute_cap_rate": compute_cap_rate,
     "osm_geocode": osm_geocode,
     "web_search": web_search,
-    "publish_memo": publish_memo,
     "ask_vacancy_agent": ask_vacancy_agent,
     "ask_prediction_agent": ask_prediction_agent,
 }

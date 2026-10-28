@@ -29,29 +29,7 @@ function displayContent(m) {
     c = c.replace(/\n*\[eval retry:[\s\S]*$/i, "").trim();
     return c;
   }
-  c = c.replace(/\n*—\s*Warning:\s*live eval[\s\S]*$/i, "").trim();
-  c = c
-    .split("\n")
-    .filter((line) => {
-      if (/^\s*Creating the Memo\b/i.test(line)) return false;
-      if (/^\s*Now I will proceed\b/i.test(line)) return false;
-      if (/^\s*\d+\.\s*(?:\[[^\]]+\]\s*)?Publish Memo\s*$/i.test(line)) return false;
-      return true;
-    })
-    .join("\n")
-    .trim();
-  return c;
-}
-
-function isHitlPendingPayload(data) {
-  if (!data) return false;
-  if (data.kind === "hitl_pending" || data.pending_hitl) return true;
-  const msgs = data.history || data.messages;
-  if (Array.isArray(msgs) && msgs.length) {
-    const last = msgs[msgs.length - 1];
-    if (last?.kind === "hitl_pending") return true;
-  }
-  return false;
+  return c.replace(/\n*—\s*Warning:\s*live eval[\s\S]*$/i, "").trim();
 }
 
 async function api(path, { method = "GET", username, body, headers, timeoutMs = FETCH_MS } = {}) {
@@ -202,14 +180,12 @@ function formatRunLogText(runLog) {
 }
 
 function applySession(setSession, data) {
-  if (!data?.history && !data?.vault && !data?.facts && !data?.memos && !data?.pending_hitl) return;
+  if (!data?.history && !data?.vault && !data?.facts) return;
   setSession((s) => ({
     ...s,
     messages: data.history ?? s?.messages,
-    pending_hitl: data.pending_hitl,
     facts: data.facts ?? s?.facts,
     vault: data.vault ?? s?.vault,
-    memos: data.memos ?? s?.memos,
   }));
 }
 
@@ -258,14 +234,6 @@ export default function App() {
   useEffect(() => {
     logEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [runLog]);
-
-  useEffect(() => {
-    if (session?.pending_hitl) setVaultOpen(true);
-    const msgs = session?.messages;
-    if (Array.isArray(msgs) && msgs[msgs.length - 1]?.kind === "hitl_pending") {
-      setVaultOpen(true);
-    }
-  }, [session?.pending_hitl, session?.messages]);
 
   async function login(e) {
     e.preventDefault();
@@ -356,7 +324,6 @@ export default function App() {
     const outgoing = text;
     const outgoingFile = file;
     const failFlag = Boolean(searchFail);
-    const outgoingChip = chipId;
     const hasQuestion = Boolean(outgoing.trim());
     const rawUser = outgoing.trim() || (outgoingFile ? `[attached ${outgoingFile.name}]` : "");
     const userContent = displayContent({ role: "user", content: rawUser });
@@ -376,7 +343,6 @@ export default function App() {
       const fd = new FormData();
       fd.append("message", outgoing);
       fd.append("search_fail", failFlag ? "true" : "false");
-      if (outgoingChip) fd.append("chip_id", outgoingChip);
       if (outgoingFile) fd.append("file", outgoingFile);
       const data = await streamChat({
         username,
@@ -388,7 +354,6 @@ export default function App() {
       });
       if (hasQuestion && Array.isArray(data.logs) && data.logs.length) setRunLog(data.logs);
       applySession(setSession, data);
-      if (isHitlPendingPayload(data)) setVaultOpen(true);
       if (fileInput.current) fileInput.current.value = "";
       setFile(null);
     } catch (err) {
@@ -402,29 +367,6 @@ export default function App() {
       }
       setText((current) => (current.trim() ? current : outgoing));
       setFile((current) => current || outgoingFile);
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resolveHitl(allow) {
-    setBusy(true);
-    try {
-      const data = await api("/api/hitl", {
-        method: "POST",
-        username,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allow }),
-      });
-      setSession((s) => ({
-        ...s,
-        messages: data.history,
-        pending_hitl: null,
-        memos: data.memos ?? s?.memos,
-      }));
-    } catch (err) {
-      applySession(setSession, err.data);
       setError(err.message);
     } finally {
       setBusy(false);
@@ -461,7 +403,6 @@ export default function App() {
   }
 
   const msgs = session?.messages || [];
-  const pending = session?.pending_hitl;
   const vaultExpanded = vaultOpen;
   const showEval = view === "eval";
 
@@ -538,31 +479,6 @@ export default function App() {
               ))}
               {!session?.facts || Object.keys(session.facts).length === 0 ? <li>No FACT# yet</li> : null}
             </ul>
-            <h2>Memos</h2>
-            <ul className="facts memos">
-              {(session?.memos || []).map((m) => (
-                <li key={m.ts || m.title}>
-                  <code>MEMO#{m.ts}</code>
-                  <strong> {m.title}</strong>
-                  {m.body ? <pre className="memo-body">{m.body}</pre> : null}
-                </li>
-              ))}
-              {!session?.memos || session.memos.length === 0 ? <li>No MEMO# yet</li> : null}
-            </ul>
-            {pending && (
-              <div className="hitl">
-                <h2>HITL · publish_memo</h2>
-                <p>{pending.title}</p>
-                <div className="row">
-                  <button type="button" disabled={busy} onClick={() => resolveHitl(true)}>
-                    Approve
-                  </button>
-                  <button type="button" className="ghost" disabled={busy} onClick={() => resolveHitl(false)}>
-                    Deny
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </aside>
       </main>

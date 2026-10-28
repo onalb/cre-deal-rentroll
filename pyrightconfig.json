@@ -1,0 +1,13 @@
+{
+  "pythonVersion": "3.14",
+  "include": ["api", "src", "tests"],
+  "exclude": ["**/__pycache__", ".venv"],
+  "executionEnvironments": [
+    { "root": "api" },
+    { "root": "src" },
+    {
+      "root": "tests",
+      "extraPaths": ["api", "../capabilities-gateway"]
+    }
+  ]
+}

@@ -57,13 +57,6 @@ export const DEMO_CHIPS = [
     prompt: "Where is this property? Can you put it on a map?",
   },
   {
-    id: "create-memo",
-    level: "medium",
-    label: "Create memo",
-    searchFail: false,
-    prompt: "Create a memo synthesizing this session.",
-  },
-  {
     id: "underwrite",
     level: "medium",
     label: "Income vs ask",

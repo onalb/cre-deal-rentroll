@@ -351,8 +351,6 @@ aside h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
 .log-live { margin-top: 0.6rem; font-size: 0.78rem; }
 .facts { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
 .facts li { margin-bottom: 0.35rem; }
-.memos { margin-top: 0.35rem; }
-.memo-body { margin: 0.25rem 0 0; white-space: pre-wrap; font-size: 0.8rem; }
 .composer { margin-top: 0.75rem; }
 textarea, input[type="text"], .login-card input {
   width: 100%;
@@ -454,7 +452,6 @@ button.case-tip-close:hover {
 .fname { font-size: 0.85rem; }
 .check { font-size: 0.85rem; color: var(--muted); }
 .empty, .hint { color: var(--muted); }
-.hitl { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 code { font-family: ui-monospace, Consolas, monospace; font-size: 0.86em; }
 @media (max-width: 960px) {
   main {

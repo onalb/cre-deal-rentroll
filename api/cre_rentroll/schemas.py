@@ -185,10 +185,9 @@ class EvalScores(BaseModel):
 
 
 class ChatOutcome(BaseModel):
-    kind: Literal["answer", "warning", "error", "out_of_scope", "hitl_pending", "hitl_denied", "ingest_ack"]
+    kind: Literal["answer", "warning", "error", "out_of_scope", "ingest_ack"]
     text: str
     eval: EvalScores | None = None
     stop_reason: str | None = None
     tools_called: list[str] = Field(default_factory=list)
-    pending_hitl: dict[str, Any] | None = None
     ingest: dict[str, Any] | None = None

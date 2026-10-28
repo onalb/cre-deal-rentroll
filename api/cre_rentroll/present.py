@@ -13,10 +13,10 @@ _OPERATOR_LEAK = re.compile(
 _WORK = (
     r"query_units|compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_vacancy|ask_prediction_agent|"
     r"osm_geocode|web_search|create_plan|update_plan(?:_status)?|"
-    r"score_gcr|reflection|publish_memo"
+    r"score_gcr|reflection"
 )
 _PLAN_LINE = re.compile(
-    rf"(?im)^\s*\d+\.\s*(?:\[[^\]]+\]\s*)?(?:{_WORK}|publish\s+memo)\b"
+    rf"(?im)^\s*\d+\.\s*(?:\[[^\]]+\]\s*)?(?:{_WORK})\b"
 )
 _CURRENT_STEP = re.compile(r"(?im)^\s*Current step\s*:")
 _NEXT_STEPS = re.compile(r"(?im)^\s*Next steps\s*:")
@@ -30,17 +30,7 @@ _REACT_NARRATE = re.compile(
     r"I will conduct a search|"
     r"calling (?:osm_geocode|query_units))\b"
 )
-_FAKE_TOOL_JSON = re.compile(
-    r"(?is)recipient_name|functions\.publish_memo"
-)
-_MEMO_ASK_RE = re.compile(
-    r"(?is)\b(?:create|publish|write|save|draft|synthesiz\w*)\b.{0,80}\bmemo\b|"
-    r"\bmemo\b.{0,80}\b(?:create|publish|write|save|synthesiz\w*|session)\b"
-)
-_PROCEED_RE = re.compile(
-    r"(?i)^(proceed|yes|y|ok|okay|do it|go ahead|continue|publish(?:\s+it)?)\s*[.!]?\s*$"
-)
-_PLAN_TITLE = re.compile(r"(?im)^\s*Creating the Memo\b.*")
+_FAKE_TOOL_JSON = re.compile(r"(?is)recipient_name|functions\.")
 _STATUS_TAG = re.compile(
     r"(?i)\[(?:tag:\s*)?(?:in_progress|pending|completed|incomplete)\]"
 )
@@ -163,95 +153,6 @@ def _looks_like_eval_json(text: str) -> bool:
     )
 
 
-def _publish_memo_params(obj: dict) -> dict[str, str] | None:
-    name = str(obj.get("recipient_name") or obj.get("name") or obj.get("tool") or "")
-    params = obj.get("parameters") if isinstance(obj.get("parameters"), dict) else None
-    if params is None and isinstance(obj.get("arguments"), dict):
-        params = obj["arguments"]
-    if params is None and {"title", "body"} <= set(obj):
-        params = obj
-    if "publish_memo" not in name.lower():
-        return None
-    title = str((params or {}).get("title") or "").strip()
-    body = str((params or {}).get("body") or "").strip()
-    if title and body:
-        return {"title": title, "body": body}
-    return None
-
-
-def leaked_publish_memo_args(text: str) -> dict[str, str] | None:
-    """Title+body from dumped functions.publish_memo JSON (not a real tool call)."""
-    for _, _, obj in _iter_json_objects(text or ""):
-        if isinstance(obj, dict):
-            found = _publish_memo_params(obj)
-            if found:
-                return found
-    return None
-
-
-def is_memo_publish_turn(message: str, history: list | None = None) -> bool:
-    """True for create/publish memo, or proceed/yes after a memo ask or memo plan."""
-    msg = (message or "").strip()
-    if _MEMO_ASK_RE.search(msg):
-        return True
-    if not _PROCEED_RE.match(msg):
-        return False
-    for row in reversed(history or []):
-        content = str(row.get("content") or "")
-        if _MEMO_ASK_RE.search(content):
-            return True
-        if leaked_publish_memo_args(content):
-            return True
-        low = content.lower()
-        if "publish_memo" in low or "creating the memo" in low or "publish memo" in low:
-            return True
-    return False
-
-
-def last_drafted_memo(history: list | None, extra_text: str = "") -> dict[str, str] | None:
-    """Last model-written memo (leak JSON or prose). Does not invent a body."""
-    rows = list(history or [])
-    start = 0
-    for i, row in enumerate(rows):
-        role = str(row.get("role") or "").strip().lower()
-        content = str(row.get("content") or "")
-        if role == "user" and _MEMO_ASK_RE.search(content):
-            start = i
-    window = rows[start:]
-    blobs: list[str] = []
-    if extra_text and str(extra_text).strip():
-        blobs.append(str(extra_text))
-    for row in reversed(window):
-        if str(row.get("role") or "").strip().lower() != "assistant":
-            continue
-        kind = str(row.get("kind") or "")
-        if kind in {"hitl_pending", "ingest_ack"}:
-            continue
-        blobs.append(str(row.get("content") or ""))
-    for blob in blobs:
-        leaked = leaked_publish_memo_args(blob)
-        if leaked:
-            return leaked
-    canned = "saving a memo needs your approval"
-    for blob in blobs:
-        text = strip_operator_echo(blob)
-        if not text or is_operator_leak(text):
-            continue
-        if canned in text.lower():
-            continue
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        if not lines:
-            continue
-        title = lines[0][:200]
-        body = "\n".join(lines[1:]).strip() if len(lines) > 1 else text.strip()
-        if len(body) < 40:
-            continue
-        if title == body:
-            title = "memo"
-        return {"title": title, "body": body}
-    return None
-
-
 def _looks_like_tool_json(text: str) -> bool:
     if _looks_like_eval_json(text):
         return True
@@ -282,11 +183,9 @@ def is_operator_leak(draft: str) -> bool:
         return True
     if _INVENTORY_LINE.search(text) or _REACT_NARRATE.search(text):
         return True
-    if _PLAN_TITLE.search(text):
-        return True
     if _STATUS_TAG.search(text):
         return True
-    if _FAKE_TOOL_JSON.search(text) or leaked_publish_memo_args(text):
+    if _FAKE_TOOL_JSON.search(text):
         return True
     return _looks_like_tool_json(text)
 
@@ -300,7 +199,7 @@ def _strip_leaked_tool_json(text: str) -> str:
         if not isinstance(obj, dict):
             continue
         name = str(obj.get("recipient_name") or obj.get("name") or "")
-        if _publish_memo_params(obj) or "recipient_name" in obj or "functions." in name:
+        if "recipient_name" in obj or "functions." in name:
             found = True
             chunks.append(blob[last:start])
             last = end
@@ -319,13 +218,13 @@ def strip_operator_echo(draft: str) -> str:
             continue
         if _INVENTORY_LINE.search(line) or _OPERATOR_LEAK.match(line.strip()):
             continue
-        if _STATUS_TAG.search(line) or _REACT_NARRATE.search(line) or _PLAN_TITLE.match(line):
+        if _STATUS_TAG.search(line) or _REACT_NARRATE.search(line):
             continue
         kept.append(line)
     text = "\n".join(kept).strip()
     if _looks_like_tool_json(text) or _looks_like_eval_json(text):
         return ""
-    if _REACT_NARRATE.search(text) or _STATUS_TAG.search(text) or _PLAN_TITLE.search(text):
+    if _REACT_NARRATE.search(text) or _STATUS_TAG.search(text):
         return ""
     return text
 

@@ -52,8 +52,6 @@ def test_classify_prompt_is_generic_property_deal_area_vs_personal_chat():
     assert "wrong country" in blob or "country or place" in blob
     assert "search the map" in blob
     assert "attached" in blob
-    assert "saved memos" in blob or "deal artifacts" in blob
-    assert "memo" in blob
     assert "flood" not in blob
     assert "population" not in blob
     assert "las vegas" not in blob

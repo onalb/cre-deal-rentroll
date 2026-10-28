@@ -20,7 +20,6 @@ MCP_TOOLS = frozenset(
         "ask_prediction_agent",
         "osm_geocode",
         "web_search",
-        "publish_memo",
         "create_plan",
         "update_plan",
         "update_plan_status",
@@ -385,8 +384,6 @@ def tool_message(name: str, args: dict[str, Any], result: Any) -> str:
         n = len(r.get("results") or [])
         q = re.sub(r"\s+", " ", str((args or {}).get("query") or "")).strip()
         return f"{shown} → {n} hits ({q})" if q else f"{shown} → {n} hits"
-    if name == "publish_memo":
-        return f"{shown} → {r.get('status')}"
     if name in {"create_plan", "update_plan", "update_plan_status"}:
         plan = r.get("log") or r.get("hint") or r.get("plan") or (args or {}).get("tasks") or ""
         if isinstance(plan, (list, tuple)):

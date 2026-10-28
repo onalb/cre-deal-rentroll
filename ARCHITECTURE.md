@@ -1,8 +1,8 @@
 # Architecture
 
-CRE rent-roll web app: **deterministic ingest** fills the vault on attach; the **question LLM** writes the chat answer in prose. Strands still owns the ReAct loop and tools; this repo adds scope → inventory → decompose, reflection, HITL, Dynamo LTM, and live eval after the draft.
+CRE rent-roll web app: **deterministic ingest** fills the vault on attach; the **question LLM** writes the chat answer in prose. Strands still owns the ReAct loop and tools; this repo adds scope → inventory → decompose, reflection, Dynamo LTM, and live eval after the draft.
 
-**Text flowchart** (mermaid below). Draw.io: [docs/cre-deal-rentroll.drawio](docs/cre-deal-rentroll.drawio) (deterministic ingest vs LLM question). Detailed harness/eval chart matching the Lucid screenshot: [docs/cre-deal-rentroll-harness-flow.drawio](docs/cre-deal-rentroll-harness-flow.drawio) (open in https://app.diagrams.net or the Draw.io VS Code extension).
+**Text flowchart** is the mermaid below.
 
 Lucid architecture chart: [CRE Deal Rentroll — ingest and harness flow](https://lucid.app/lucidchart/1ae515e7-8d27-4709-a086-16b1c87e8965/edit)
 
@@ -45,10 +45,9 @@ flowchart TB
     INV["Inventory + decompose<br/>RollAbstractor · Locator optional · Underwriter"]
     LOAD["Load vault snapshot + FACT# + question"]
     REACT["ReAct / Strands per subgoal<br/>LLM prose answer — no occupancy slicers"]
-    TOOLS["In-process vault tools MCP-shaped<br/>query_units · compute_income · compute_noi · compute_cap_rate<br/>OSM geocode — Locator only if user asked location<br/>web_search — underwrite / news<br/>publish_memo — HITL approve / deny"]
+    TOOLS["In-process vault tools MCP-shaped<br/>query_units · compute_income · compute_noi · compute_cap_rate<br/>OSM geocode — Locator only if user asked location<br/>web_search — underwrite / news"]
     PROSE["Return LLM prose"]
     EVAL["Eval G / C / R after draft<br/>optional one shared retry"]
-    HITL["HITL publish_memo<br/>pause until Approve / Deny"]
     Q -->|"LLM JSON classify, fail closed"| SCOPE
     SCOPE -->|no| OOS
     SCOPE -->|yes| HASV
@@ -58,7 +57,6 @@ flowchart TB
     LOAD -->|"prompt + skills"| REACT
     REACT -->|tool calls| TOOLS
     REACT --> PROSE
-    TOOLS -->|"if publish"| HITL
     PROSE -->|"judge draft"| EVAL
     EVAL -.->|"retry once"| REACT
   end
@@ -86,11 +84,11 @@ flowchart TB
 - **UI → API.** Username login on `:8080` sends `X-Username` plus an attachment or a CRE question to the FastAPI harness on `:8002`.
 - **Ingest.** Decode CSV/xlsx, strip PII, detect layout, parse RealPage or one-row into `CanonicalRentRoll`, write `VAULT#default` + `FACT#`. No OpenAI on attach.
 - **Question.** Scope fails closed (non-CRE → canned IRRELEVANT, no tools). Empty vault asks for an attach. Otherwise inventory + decompose, then vault snapshot + `FACT#` + the question go into ReAct/Strands for **LLM prose** (no occupancy template slicers).
-- **Tools.** Live path calls the same Python vault tools in-process so `ContextVar` username/vault stay correct. Locator/OSM geocode only if the user asked location. `web_search` for underwrite/news. `publish_memo` pauses for HITL.
+- **Tools.** Live path calls the same Python vault tools in-process so `ContextVar` username/vault stay correct. Locator/OSM geocode only if the user asked location. `web_search` for underwrite/news.
 - **Eval.** Live G / C / R from the OpenAI JSON judge after the draft exists; `vault_calc_ok` is an independent number check. Judge failure stops with eval error (no heuristic scores). One shared retry is optional for vault/calc or low G/C.
 - **Dynamo.** Table `ml_interview` (`USER#name`): PROFILE, VAULT, FACT#, SESSION#, TRACE#. Host `:8003` / admin `:8004`. Facts are auto-injected into the agent prompt. SnapshotSessionManager is stubbed.
 
-**Legend:** orange = LLM (scope JSON, Strands prose). Blue = deterministic (decode, PII, layout/parse, vault calc tools, Dynamo I/O). Diamonds = gates (in scope? has vault?). Optional: Locator/OSM, web_search, HITL, eval retry.
+**Legend:** orange = LLM (scope JSON, Strands prose). Blue = deterministic (decode, PII, layout/parse, vault calc tools, Dynamo I/O). Diamonds = gates (in scope? has vault?). Optional: Locator/OSM, web_search, eval retry.
 
 ## Ingest
 
@@ -110,7 +108,7 @@ Live `ingest_bytes` does not call OpenAI. An unused LLM extract helper may remai
 3. Read vault snapshot + `FACT#` + the question.
 4. LLM generates the answer in **prose**. Return that text. No occupancy-% vs unit-count regex/template slicers as the chat answer (`present.answer_prose` unwraps JSON if the model leaked it; it does not fill a metric template).
 5. Live eval runs **after** the draft (vault/calc this-turn traces, R / G / request-C, one shared retry).
-6. Tools/MCP (`query_units`, `compute_*`) for calc. Geocode / OSM only if the user asked (Locator). `web_search` on underwrite/news. HITL on `publish_memo`. Live agent calls the **same Python tools in-process** so FastAPI turn context (username/vault) stays correct.
+6. Tools/MCP (`query_units`, `compute_*`) for calc. Geocode / OSM only if the user asked (Locator). `web_search` on underwrite/news. Live agent calls the **same Python tools in-process** so FastAPI turn context (username/vault) stays correct.
 
 ## Memory
 

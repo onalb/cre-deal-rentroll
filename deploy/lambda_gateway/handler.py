@@ -1,4 +1,4 @@
-"""AgentCore Gateway Lambda target — same CRE tools as the runtime FastMCP servers."""
+"""AgentCore Gateway Lambda target — calls cre_rentroll.tools.TOOL_IMPLS."""
 
 from __future__ import annotations
 

@@ -26,6 +26,7 @@ def _mock_scope_agent_token(monkeypatch):
     """
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
     monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.delenv("SCORE_GCR_LAMBDA_ARN", raising=False)
     monkeypatch.setattr(
         "cre_rentroll.scope._scope_agent_token",
         lambda message, history=None: "IN_SCOPE",

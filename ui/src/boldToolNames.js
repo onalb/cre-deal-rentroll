@@ -4,7 +4,6 @@ export const LOG_TOOL_NAMES = [
   "compute_income",
   "query_units",
   "osm_geocode",
-  "publish_memo",
   "web_search",
   "create_plan",
   "update_plan_status",

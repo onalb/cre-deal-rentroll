@@ -10,6 +10,9 @@ from typing import Any, Iterator
 DISPLAY_NAME = "La Cordoba Rent Roll 04-20-21 (2) 164.xlsx"
 MAX_RUNS = 5
 
+_PKG = Path(__file__).resolve().parent
+_REPO = _PKG.parent
+
 _WORK_TOOLS = frozenset(
     {
         "query_units",
@@ -20,7 +23,6 @@ _WORK_TOOLS = frozenset(
         "ask_prediction_agent",
         "osm_geocode",
         "web_search",
-        "publish_memo",
     }
 )
 
@@ -29,10 +31,7 @@ def gold_cases_path() -> Path:
     env = (os.environ.get("GOLD_EVAL_CASES") or "").strip()
     if env:
         return Path(env)
-    repo = Path(__file__).resolve().parents[2] / "tests" / "gold.json"
-    if repo.is_file():
-        return repo
-    return Path("/app/tests/gold.json")
+    return _PKG / "gold.json"
 
 
 def xlsx_candidates() -> list[Path]:
@@ -40,8 +39,8 @@ def xlsx_candidates() -> list[Path]:
     env = (os.environ.get("GOLD_EVAL_XLSX") or "").strip()
     if env:
         found.append(Path(env))
-    found.append(Path("/app/data/gold/lacordoba.xlsx"))
-    found.append(Path(__file__).resolve().parents[2] / "data" / "gold" / "lacordoba.xlsx")
+    found.append(Path("/app/gold_eval/gold/lacordoba.xlsx"))
+    found.append(_REPO / "gold_eval" / "gold" / "lacordoba.xlsx")
     found.append(Path.home() / "Desktop" / "ML Interview" / DISPLAY_NAME)
     return found
 
@@ -151,7 +150,7 @@ def iter_gold(username: str, runs: int) -> Iterator[dict[str, Any]]:
         "file": DISPLAY_NAME,
         "message": f"Uploading {DISPLAY_NAME}",
     }
-    vault.save_session(user, [], pending_hitl=None, eval_retry_used=False)
+    vault.save_session(user, [], eval_retry_used=False)
     ingested = harness.ingest_attachment(user, DISPLAY_NAME, raw)
     base = list(vault.load_session(user).get("messages") or [])
     info = ingested.ingest or {}
@@ -178,7 +177,7 @@ def iter_gold(username: str, runs: int) -> Iterator[dict[str, Any]]:
                 "runs": runs,
                 "message": f"{case_id} · run {run} of {runs}",
             }
-            vault.save_session(user, base, pending_hitl=None, eval_retry_used=False)
+            vault.save_session(user, base, eval_retry_used=False)
             try:
                 outcome = harness.run_task(user, query, search_fail=search_fail)
             except Exception as exc:

@@ -12,7 +12,7 @@ COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY api/cre_rentroll /app/cre_rentroll
-COPY tests/gold.json /app/tests/gold.json
+COPY gold_eval /app/gold_eval
 
 EXPOSE 8000
 CMD ["uvicorn", "cre_rentroll.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -9,8 +9,7 @@ README.md
 ARCHITECTURE.md
 docs
 tests/*
-!tests/gold.json
-data/debug
+gold_eval/gold
 .cursor
 .pytest_cache
 api/.pytest_cache

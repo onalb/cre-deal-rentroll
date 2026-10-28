@@ -6,7 +6,6 @@ import json
 from cre_rentroll.agents import BOOK, _run_openai_tools_loop
 from cre_rentroll.capabilities_client import GATEWAY_REQUIRED
 from cre_rentroll.harness import run_task
-from cre_rentroll.mcp_runtime import VAULT_MCP, mcp_server_for
 from cre_rentroll.predict_followup import reset_predict_state
 from cre_rentroll.run_events import bind, reset
 from cre_rentroll.schemas import CanonicalRentRoll, EvalScores, UnitRow
@@ -19,7 +18,6 @@ def test_prediction_tool_is_on_the_book_menu():
     assert "ask_vacancy_agent" in BOOK.tool_names
     assert "ask_vacancy" not in BOOK.tool_names
     assert TOOL_IMPLS["ask_prediction_agent"] is ask_prediction_agent
-    assert mcp_server_for("ask_prediction_agent") == VAULT_MCP
     source = inspect.getsource(ask_prediction_agent)
     assert "RR_PREDICT_URL" not in source
     assert "def forecast" not in source

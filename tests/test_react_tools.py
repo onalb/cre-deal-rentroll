@@ -48,30 +48,16 @@ def test_react_tools_in_tool_impls():
         assert "query_units" in inv.tool_names
         assert "compute_income" in inv.tool_names
         assert "osm_geocode" in inv.tool_names
-        assert "publish_memo" in inv.tool_names
 
 
-def test_book_tools_are_inprocess_mcp(monkeypatch):
-    from cre_rentroll.mcp_runtime import (
-        RENTROLL_MCP,
-        OSM_MCP,
-        VAULT_MCP,
-        book_mcp_impls,
-        mcp_server_for,
-    )
+def test_book_tools_are_tool_impls():
+    from cre_rentroll.agents import agent_tool_impls
 
-    impls = book_mcp_impls()
+    impls = agent_tool_impls()
     for name in BOOK.tool_names:
+        assert name in TOOL_IMPLS
         assert name in impls
-        assert callable(impls[name])
-    assert mcp_server_for("query_units") == VAULT_MCP
-    assert mcp_server_for("compute_cap_rate") == VAULT_MCP
-    assert mcp_server_for("create_plan") == RENTROLL_MCP
-    assert mcp_server_for("update_plan_status") == RENTROLL_MCP
-    assert mcp_server_for("score_gcr") == RENTROLL_MCP
-    assert mcp_server_for("osm_geocode") == OSM_MCP
-    assert mcp_server_for("web_search") == RENTROLL_MCP
-    assert mcp_server_for("publish_memo") == RENTROLL_MCP
+        assert impls[name].__wrapped__ is TOOL_IMPLS[name]
 
 
 def _assert_real_params(fn, *expected: str, forbidden=("args", "kwargs")) -> None:
@@ -82,10 +68,45 @@ def _assert_real_params(fn, *expected: str, forbidden=("args", "kwargs")) -> Non
         assert key in names, names
 
 
-def test_mcp_impls_use_real_tool_schemas_not_args_kwargs():
-    from cre_rentroll.mcp_runtime import book_mcp_impls
+def test_bound_tool_reenters_turn_context_from_another_thread(monkeypatch):
+    import threading
 
-    impls = book_mcp_impls()
+    from cre_rentroll.agents import agent_tool_impls, bind_turn_context, clear_turn_context
+
+    seen: dict = {}
+
+    def fake(name, arguments, timeout=180.0):
+        seen["name"] = name
+        seen["username"] = arguments.get("username")
+        return json.dumps({"ok": True, "unit_count": 1})
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
+    reset_turn("ada")
+    bind_turn_context()
+    try:
+        impl = agent_tool_impls()["query_units"]
+        errors: list[BaseException] = []
+
+        def run() -> None:
+            try:
+                impl(vacant_only=True)
+            except BaseException as exc:
+                errors.append(exc)
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        worker.join()
+    finally:
+        clear_turn_context()
+    assert errors == []
+    assert seen["name"] == "query_units"
+    assert seen["username"] == "ada"
+
+
+def test_agent_tool_impls_use_real_tool_schemas_not_args_kwargs():
+    from cre_rentroll.agents import agent_tool_impls
+
+    impls = agent_tool_impls()
     _assert_real_params(impls["create_plan"], "tasks")
     _assert_real_params(impls["update_plan"], "tasks")
     _assert_real_params(impls["update_plan_status"], "tasks")
@@ -135,11 +156,11 @@ def test_strands_book_tools_schema_not_args_kwargs():
     assert "vacant_fill_rent" not in ireq
 
 
-def test_mcp_create_plan_once_runs_and_stores_checklist():
-    from cre_rentroll.mcp_runtime import book_mcp_impls
+def test_agent_create_plan_once_runs_and_stores_checklist():
+    from cre_rentroll.agents import agent_tool_impls
     from cre_rentroll.run_events import bind, reset
 
-    impls = book_mcp_impls()
+    impls = agent_tool_impls()
     reset_turn("tester")
     seen: list[dict] = []
     token = bind(seen.append)
@@ -262,7 +283,7 @@ def test_parse_task_items_completed_and_in_progress_aliases():
         "2. [completed] compute_income\n"
         "3. compute_noi — done\n"
         "4. **in_progress** score_gcr\n"
-        "5. [ ] publish_memo"
+        "5. [ ] web_search"
     )
     assert [it["status"] for it in items] == [
         "completed",
@@ -292,7 +313,7 @@ def test_parse_task_items_incomplete_aliases():
         "2. [incomplet] osm_geocode\n"
         "3. web_search — blocked\n"
         "4. [n/a] compute_cap_rate\n"
-        "5. [unanswerable] publish_memo"
+        "5. [unanswerable] web_search"
     )
     assert [it["status"] for it in items] == [
         "incomplete",
@@ -937,7 +958,9 @@ def test_avg_sqft_skill_and_gold_case():
     gateway = root.parent / "capabilities-gateway" / "skills"
     abstract = (gateway / "rent-roll-abstract" / "SKILL.md").read_text(encoding="utf-8")
     cite = (gateway / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
-    gold = json.loads((root / "tests" / "gold.json").read_text(encoding="utf-8"))
+    gold = json.loads(
+        (root / "gold_eval" / "gold.json").read_text(encoding="utf-8")
+    )
     assert "avg_sqft" in abstract
     assert "does not specify square footage" in abstract
     assert "hand-average" in abstract

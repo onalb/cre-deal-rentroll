@@ -5,7 +5,7 @@ from typing import Any
 
 from cre_rentroll import reflect, turn_ctx, vault
 from cre_rentroll.agents import BOOK, Inventory, RateLimitedError, RATE_LIMIT_TEXT, is_rate_limited, run_agent
-from cre_rentroll.chips import allow_predict, chip_prompt, filter_book_tools
+from cre_rentroll.chips import allow_predict, filter_book_tools
 from cre_rentroll.settings import openai_api_key
 from cre_rentroll.eval_service import cited_locate_map_draft, format_eval_log, gate
 from cre_rentroll.ingest import ack_text, as_of_from_message, ingest_bytes
@@ -13,11 +13,8 @@ from cre_rentroll.memory import facts_prompt, generate_from_roll, write_trace
 from cre_rentroll.schemas import CanonicalRentRoll, ChatOutcome, EvalScores
 from cre_rentroll.present import (
     answer_prose,
-    is_memo_publish_turn,
     is_operator_leak,
-    last_drafted_memo,
     last_scored_prose,
-    leaked_publish_memo_args,
     quoted_prediction_clarification,
     scope_fail_chat,
     strip_operator_echo,
@@ -25,7 +22,6 @@ from cre_rentroll.present import (
 )
 from cre_rentroll.scope import classify_scope
 from cre_rentroll.run_events import emit, emit_stop_and_summary
-from cre_rentroll.tools import MEMO_PUBLISH_RULE
 
 
 def inventory_for(_message: str) -> list[Inventory]:
@@ -88,14 +84,12 @@ _SESSION_FOLLOW = (
     "Idle weekend weather is OOS; facts about the property's area or market stay in scope. "
     "12-month occupancy / expirations / MTM waterfall / predicted occupancy → "
     "ask_prediction_agent (not query_units). "
-    "In-scope (this property, the rent roll, the deal, the area/market it sits in, "
-    "or deal artifacts in vault/session such as saved memos): "
+    "In-scope (this property, the rent roll, the deal, or the area/market it sits in): "
     "first tool is always create_plan. "
     "One numbered line per needed work tool — not per comma in the user sentence. "
     "A one-item list is fine when that one tool answers the whole last message "
     "(this-deal occupancy only → query_units; map-only → osm_geocode; definition of "
-    "a rent roll → web_search; create/publish a memo → the first (and typically "
-    "only) work tool is publish_memo; average property "
+    "a rent roll → web_search; average property "
     "value in that area / metro / comps / "
     "area/market facts → web_search; zip/city in the message is enough; in that area "
     "uses last geocode/address_hint; one web_search). "
@@ -105,7 +99,6 @@ _SESSION_FOLLOW = (
     "compute_cap_rate / compute_noi unless THIS last message asked. "
     "If you must call a work tool that is not on the checklist, update_plan with the missing items "
     "FIRST, then that tool. "
-    f"{MEMO_PUBLISH_RULE}"
 )
 
 
@@ -164,7 +157,7 @@ def ingest_attachment(username: str, filename: str, raw: bytes) -> ChatOutcome:
         {"role": "user", "content": f"[attached {filename}]"},
         {"role": "assistant", "content": text, "kind": "ingest_ack"},
     ]
-    vault.save_session(username, messages, pending_hitl=sess.get("pending_hitl"))
+    vault.save_session(username, messages)
     emit(
         "ingest",
         f"{roll.property_name or filename}, {roll.unit_count} units, parser={roll.layout}",
@@ -191,7 +184,6 @@ def run_task(
     message: str,
     *,
     search_fail: bool = False,
-    hitl_allow: bool = False,
     has_attachment: bool = False,
     skip_scope: bool = False,
     persist_as: str | None = None,
@@ -212,7 +204,7 @@ def run_task(
     shown_user = persist_as or user_visible(message)
     llm_user = shown_user
     traces = turn_ctx.reset_turn(
-        username, hitl_allow=hitl_allow, search_fail=search_fail, keep_run=skip_scope
+        username, search_fail=search_fail, keep_run=skip_scope
     )
     asked = as_of_from_message(shown_user)
     turn_ctx.set_asked_as_of(asked)
@@ -255,11 +247,9 @@ def run_task(
             begin_turn(username)
         except Exception:
             pass
-        names = filter_book_tools(
-            BOOK.tool_names, chip_id, shown_user, username=username
-        )
+        names = filter_book_tools(BOOK.tool_names, shown_user, username=username)
         skills = BOOK.skills
-        if allow_predict(chip_id, shown_user, username=username):
+        if allow_predict(shown_user, username=username):
             skills = (*skills, "rr-predict")
         inv = Inventory(BOOK.name, names, skills)
     else:
@@ -268,7 +258,7 @@ def run_task(
         inv = Inventory(BOOK.name, (), ())
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
-    predict_on = cre_ask and allow_predict(chip_id, shown_user, username=username)
+    predict_on = cre_ask and allow_predict(shown_user, username=username)
     emit(
         "inventory",
         (
@@ -284,9 +274,6 @@ def run_task(
         emit("skills", f"attached {', '.join(inv.skills)}", skills=list(inv.skills))
     if cre_ask:
         facts = _facts_for_agent(username, has_vault)
-        steer = chip_prompt(chip_id, shown_user, username=username)
-        if steer:
-            facts = steer + "\n" + facts
     elif has_vault:
         # Keep VAULT HAS in the prompt so OOS idle-chat cannot copy NEED_FILE_TEXT.
         facts = "VAULT HAS a rent roll for this session.\n"
@@ -345,11 +332,10 @@ def run_task(
             _emit_if_reused_memory(draft, traces, facts, messages)
 
     raw_draft = "\n\n".join(drafts)
-    _recover_leaked_publish_memo(shown_user, messages, raw_draft)
     tools_called.extend(t["name"] for t in traces)
     draft_text = _user_facing_draft(raw_draft, traces)
 
-    if not cre_ask and not any(t.get("name") == "publish_memo" for t in traces):
+    if not cre_ask:
         return _oos_chat(
             username, messages, shown_user, traces, run_id, text=draft_text
         )
@@ -359,21 +345,6 @@ def run_task(
             username, messages, shown_user, traces, run_id, text=draft_text
         )
 
-    if any(t.get("name") == "publish_memo" for t in traces) and not hitl_allow:
-        last = next(t for t in reversed(traces) if t.get("name") == "publish_memo")
-        pending = last.get("args") or {"tool": "publish_memo"}
-        pending = {"tool": "publish_memo", "title": pending.get("title", "memo"), "body": pending.get("body", draft_text)}
-        emit("hitl", "publish_memo paused — approve or deny")
-        outcome = ChatOutcome(
-            kind="hitl_pending",
-            text="Saving a memo needs your approval. Use Approve or Deny on the right.",
-            stop_reason="hitl_pause",
-            pending_hitl=pending,
-            tools_called=list(dict.fromkeys(tools_called)),
-        )
-        _persist(username, messages, shown_user, outcome, run_id, traces)
-        return outcome
-
     _ensure_score_gcr(draft_text)
     tools_called.extend(t["name"] for t in traces)
 
@@ -381,26 +352,6 @@ def run_task(
         username, message, draft_text, roll, traces, tools_called, run_id, messages, retry_used,
         persist_as=shown_user,
     )
-
-
-def _recover_leaked_publish_memo(
-    message: str, history: list[dict[str, Any]], raw_draft: str
-) -> None:
-    """If the model printed functions.publish_memo JSON (or similar), run the real tool.
-
-    Uses the leaked title/body, or the last drafted memo in session — Python does
-    not write a new memo body.
-    """
-    from cre_rentroll.tools import publish_memo
-
-    if any(t.get("name") == "publish_memo" for t in turn_ctx.traces()):
-        return
-    args = leaked_publish_memo_args(raw_draft)
-    if not args and is_memo_publish_turn(message, history):
-        args = last_drafted_memo(history, raw_draft)
-    if not args:
-        return
-    publish_memo(args["title"], args["body"])
 
 
 def _user_facing_draft(draft: str, traces: list[dict[str, Any]]) -> str:
@@ -557,7 +508,7 @@ def _persist(
         {"role": "user", "content": user_text},
         {"role": "assistant", "content": outcome.text[:4000], "kind": outcome.kind},
     ]
-    vault.save_session(username, messages, pending_hitl=outcome.pending_hitl, eval_retry_used=False)
+    vault.save_session(username, messages, eval_retry_used=False)
     try:
         write_trace(
             username,

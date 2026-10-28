@@ -41,24 +41,34 @@ def test_platform_disabled_without_runtime_flag(monkeypatch):
     assert gateway_call("query_units", {"occupancy": "Occupied"}) is None
 
 
-def test_gateway_wrapper_uses_platform(monkeypatch):
-    from cre_rentroll.mcp_runtime import _maybe_gateway
+def test_agent_query_units_posts_capabilities_not_agentcore(monkeypatch):
+    """The agent calls tools.query_units. AgentCore gateway_call is not in that path."""
+    from cre_rentroll.agents import agent_tool_impls
+    from cre_rentroll.turn_ctx import reset_turn
 
-    called = {}
+    called = {"gateway": 0, "deal": None}
 
-    def local(**kwargs):
-        return "local"
+    def fake_gateway(name, args):
+        called["gateway"] += 1
+        return '{"ok": true, "via": "agentcore"}'
+
+    def fake_deal(name, arguments, timeout=180.0):
+        called["deal"] = (name, arguments)
+        return json.dumps({"ok": True, "unit_count": 3})
 
     monkeypatch.setenv("AGENTCORE_INSIDE", "1")
     monkeypatch.setenv("AGENTCORE_GATEWAY_URL", "https://example.invalid/mcp")
-    def fake_gateway(name, args):
-        called["hit"] = (name, args)
-        return '{"ok": true}'
-
+    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
     monkeypatch.setattr("cre_rentroll.agentcore_platform.gateway_call", fake_gateway)
-    wrapped = _maybe_gateway(local, "query_units")
-    assert json.loads(wrapped(occupancy="Occupied"))["ok"] is True
-    assert called["hit"][0] == "query_units"
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake_deal)
+    reset_turn("ada")
+    out = json.loads(agent_tool_impls()["query_units"](occupancy="Occupied"))
+    assert out["ok"] is True
+    assert out["unit_count"] == 3
+    assert called["gateway"] == 0
+    assert called["deal"][0] == "query_units"
+    assert called["deal"][1]["username"] == "ada"
+    assert called["deal"][1]["occupancy"] == "Occupied"
 
 
 def test_write_trace_preview_optional(monkeypatch):

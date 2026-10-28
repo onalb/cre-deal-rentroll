@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import functools
 import inspect
 import json
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-from contextvars import copy_context
+from contextvars import Context, copy_context
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -59,7 +61,6 @@ BOOK_TOOLS = (
     "ask_prediction_agent",
     "osm_geocode",
     "web_search",
-    "publish_memo",
 )
 BOOK_SKILLS = ("rent-roll-abstract", "citation-policy", "underwriting")
 
@@ -145,8 +146,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Intent is your first create_plan checklist — Python does not pick a specialist. "
         "Python does not start a second run_agent if the draft is empty.\n"
         "Questions about this property, the rent roll, the deal, or the area/market "
-        "it sits in are in scope — never the out-of-scope refuse. Deal artifacts in "
-        "vault/session (saved memos, vault notes, a published memo) are in scope. "
+        "it sits in are in scope — never the out-of-scope refuse. "
         "If FACT#/vault/memory "
         "lack a fact, plan web_search. Short follow-ups (again, pronouns, that street, "
         "wrong country/place on the last pin, search the map again) stay in-scope. "
@@ -197,8 +197,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
             else ""
         )
         + "map-only → "
-        "osm_geocode; definition of a rent roll → web_search; create/publish a memo → "
-        "the first (and typically only) work tool is publish_memo; average property value in "
+        "osm_geocode; definition of a rent roll → web_search; average property value in "
         "that area / metro / comps / area/market facts → web_search; one web_search). "
         "One work tool per numbered line. Tag the current step [in_progress] and the rest "
         "[pending]. Do not call create_plan again. "
@@ -223,12 +222,11 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "compute_noi / query_units unless THIS message asked for location or this deal's figures. "
         "Talking to the agent as a person or idle chat: no create_plan, no score_gcr, "
         "and no other tools.\n"
-        f"{tools.MEMO_PUBLISH_RULE}\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
         f"compute_noi, compute_cap_rate, {floor_tool}"
         + (", ask_prediction_agent" if "ask_prediction_agent" in inv.tool_names else "")
         + ", osm_geocode, "
-        "web_search, or publish_memo). After that vault "
+        "web_search). After that vault "
         "tool, call update_plan_status with the SAME items: mark that step [completed] and the next "
         "[in_progress] — do not replace the list with a new one-liner and do not resend every "
         "line as [pending]. If that tool cannot supply the asked result (missing data, empty "
@@ -236,7 +234,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "is terminal like [completed] but without an answer — do not retry that item. After "
         "update_plan_status, if any item is [pending] or [in_progress], the "
         "NEXT action MUST be that work tool — not update_plan_status. Call update_plan_status only immediately "
-        "after a real vault/search/geocode/memo tool (or after a reflection that changed statuses). "
+        "after a real vault/search/geocode tool (or after a reflection that changed statuses). "
         "Forbidden: update_plan_status → update_plan_status except to mark [completed] or [incomplete] a work "
         "tool that already ran this run. If remaining items are [completed] or [incomplete], "
         "do not call those tools again — Next: score_gcr then answer. You may call reflection "
@@ -435,21 +433,64 @@ def draft_from_strands(result: Any, messages: Any = None) -> str:
     return ""
 
 
-def _strands_tools(names: tuple[str, ...]) -> list[Any]:
-    """Book tools are MCP server implementations, invoked in-process (not stdio).
+_turn_lock = threading.Lock()
+_turn_snapshot: Context | None = None
 
-    `book_mcp_impls` keeps the original Python/FastMCP signatures (create_plan(tasks),
-    query_units(occupancy, vacant_only), …). Do not wrap *args/**kwargs — Strands
-    builds Pydantic from inspect.signature and would then require args+kwargs.
-    Empty names (out-of-scope): do not import FastMCP or start Gateway clients.
+
+def bind_turn_context() -> None:
+    """Snapshot this task's ContextVars for a tool that runs on another thread."""
+    global _turn_snapshot
+    with _turn_lock:
+        _turn_snapshot = copy_context()
+
+
+def clear_turn_context() -> None:
+    global _turn_snapshot
+    with _turn_lock:
+        _turn_snapshot = None
+
+
+def run_in_turn_context(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    with _turn_lock:
+        ctx = _turn_snapshot
+    if ctx is None:
+        return fn(*args, **kwargs)
+    return ctx.run(fn, *args, **kwargs)
+
+
+def _context_bound(fn: Callable[..., Any], name: str) -> Callable[..., Any]:
+    """Call `fn` inside the bound turn context. Keep the real parameter list."""
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        return run_in_turn_context(fn, *args, **kwargs)
+
+    wrapped.__name__ = name
+    wrapped.__doc__ = fn.__doc__
+    wrapped.__signature__ = sig  # type: ignore[attr-defined]
+    wrapped.__annotations__ = dict(getattr(fn, "__annotations__", {}))
+    return wrapped
+
+
+def agent_tool_impls() -> dict[str, Callable[..., str]]:
+    """`tools.TOOL_IMPLS`, re-entering the turn ContextVars off the request task."""
+    return {name: _context_bound(fn, name) for name, fn in tools.TOOL_IMPLS.items()}
+
+
+def _strands_tools(names: tuple[str, ...]) -> list[Any]:
+    """Book tools are `tools.TOOL_IMPLS`, called in this process.
+
+    Signatures stay the real ones (create_plan(tasks), query_units(occupancy,
+    vacant_only), …). Do not wrap *args/**kwargs — Strands builds Pydantic from
+    inspect.signature and would then require args+kwargs.
+    Empty names (out-of-scope): do not build tool callables.
     """
     if not names:
         return []
     from strands import tool as strands_tool
 
-    from cre_rentroll.mcp_runtime import book_mcp_impls
-
-    mapping = book_mcp_impls()
+    mapping = agent_tool_impls()
     wrapped = []
     for name in names:
         fn = mapping[name]
@@ -867,8 +908,6 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
             turn_ctx.add_llm("agent")
 
     def _react():
-        from cre_rentroll.mcp_runtime import bind_turn_context, clear_turn_context
-
         # ReAct tools-only. Do not pass structured_output_model: a schema
         # starves ReAct (limit_turns, zero tools). G/C/R is score_gcr in-loop.
         bind_turn_context()
@@ -905,9 +944,7 @@ def run_openai_tools(prompt: str, inv: Inventory, facts: str) -> str:
         {"role": "system", "content": system_prompt(inv, facts)},
         {"role": "user", "content": prompt},
     ]
-    from cre_rentroll.mcp_runtime import bind_turn_context, book_mcp_impls, clear_turn_context
-
-    impls: dict[str, Callable[..., str]] = book_mcp_impls() if spec else {}
+    impls: dict[str, Callable[..., str]] = agent_tool_impls() if spec else {}
     bind_turn_context()
     try:
         return _run_openai_tools_loop(client, model, spec, messages, impls)
@@ -942,13 +979,6 @@ def _run_openai_tools_loop(
         msg = resp.choices[0].message
         if not msg.tool_calls:
             react_text = msg.content or ""
-            from cre_rentroll.present import leaked_publish_memo_args
-
-            leaked = leaked_publish_memo_args(react_text)
-            impl = impls.get("publish_memo") if leaked else None
-            if leaked and impl is not None:
-                impl(leaked["title"], leaked["body"])
-                react_text = json.dumps({"status": "pending_hitl", "title": leaked["title"]})
             messages.append({"role": "assistant", "content": react_text})
             break
         messages.append(
@@ -1027,11 +1057,7 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                         "A one-item list is fine when that one tool answers the whole last message "
                         "(this-deal occupancy only → query_units; 12-month occupancy forecast / "
                         "expirations / MTM waterfall → ask_prediction_agent; definition of a rent roll → "
-                        "web_search; create/publish a memo or proceed/yes after a memo ask → "
-                        "the first (and typically only) work tool is publish_memo — then "
-                        "IMMEDIATELY call MCP publish_memo the same turn; NEVER print "
-                        "functions.publish_memo JSON or 'Let's proceed'; "
-                        "average property value in that area / metro / comps / "
+                        "web_search; average property value in that area / metro / comps / "
                         "area/market facts → web_search; zip/city in the message is enough; "
                         "in that area uses last geocode/address_hint). Only if THIS last message asks map AND MTM AND cap: "
                         "osm_geocode, query_units, and compute_cap_rate as three items. "
@@ -1080,7 +1106,7 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                         "[completed], or [incomplete] tags (also [x], done, **in_progress**, "
                         "incomplet). [incomplete] = could not answer (missing data / tool "
                         "gave no result); do not retry that item. Call only "
-                        "immediately after a vault/search/geocode/memo tool (or a reflection "
+                        "immediately after a vault/search/geocode tool (or a reflection "
                         "that changed statuses). Then call the next pending work tool — "
                         "never update_plan_status twice in a row unless that tool already succeeded "
                         "this run (then mark it [completed] or [incomplete]). If remaining "
@@ -1219,26 +1245,6 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                 "max_results": {"type": "integer"},
             },
             "required": ["query"],
-        },
-        "publish_memo": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Memo title."},
-                "body": {
-                    "type": "string",
-                    "description": (
-                        "Full memo synthesizing THIS session's User/Assistant turns "
-                        "for ALL properties/deals discussed, not only the current "
-                        "FACT# roll. Python does not write this text. Call the "
-                        "real MCP publish_memo tool — NEVER print "
-                        "functions.publish_memo JSON or 'Let's proceed'. "
-                        "publish_memo first — do not dump the memo as chat before "
-                        "the tool. One-item create_plan then IMMEDIATELY call this "
-                        "tool the same turn if possible."
-                    ),
-                },
-            },
-            "required": ["title", "body"],
         },
     }
     return [

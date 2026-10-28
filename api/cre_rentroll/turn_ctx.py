@@ -6,7 +6,6 @@ from typing import Any
 
 _traces: ContextVar[list[dict[str, Any]] | None] = ContextVar("cre_traces", default=None)
 _username: ContextVar[str | None] = ContextVar("cre_username", default=None)
-_hitl_allow: ContextVar[bool] = ContextVar("cre_hitl_allow", default=False)
 _search_fail: ContextVar[bool] = ContextVar("cre_search_fail", default=False)
 _asked_as_of: ContextVar[str | None] = ContextVar("cre_asked_as_of", default=None)
 _run_t0: ContextVar[float | None] = ContextVar("cre_run_t0", default=None)
@@ -25,14 +24,12 @@ _eval_query: ContextVar[str | None] = ContextVar("cre_eval_query", default=None)
 def reset_turn(
     username: str,
     *,
-    hitl_allow: bool = False,
     search_fail: bool = False,
     keep_run: bool = False,
 ) -> list[dict[str, Any]]:
     traces: list[dict[str, Any]] = []
     _traces.set(traces)
     _username.set(username)
-    _hitl_allow.set(hitl_allow)
     _search_fail.set(search_fail)
     _asked_as_of.set(None)
     _llm_kinds.set([])
@@ -247,10 +244,6 @@ def last_tool_name() -> str | None:
 
 def username() -> str | None:
     return _username.get()
-
-
-def hitl_allowed() -> bool:
-    return _hitl_allow.get()
 
 
 def search_should_fail() -> bool:

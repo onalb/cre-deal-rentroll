@@ -61,17 +61,9 @@ def test_operator_leak_detects_plan_json_inventory():
     assert is_operator_leak(
         "I will conduct a search to define a rent roll.\n[tag: in_progress] [pending]"
     )
-    echo = (
-        "Creating the Memo\n"
-        "1. Publish Memo\n"
-        "Now I will proceed to publish"
-    )
-    assert is_operator_leak(echo)
-    assert strip_operator_echo(echo) == ""
     fake = (
         "Let's proceed\n"
-        '{"recipient_name":"functions.publish_memo","parameters":{'
-        '"title":"Hill","body":"Session synthesis."}}'
+        '{"recipient_name":"functions.web_search","parameters":{"query":"cap rate"}}'
     )
     assert is_operator_leak(fake)
     assert "recipient_name" not in strip_operator_echo(fake)

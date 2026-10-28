@@ -34,7 +34,6 @@ def test_how_many_units_is_cre():
     assert inventories_from_intent("underwrite") == [BOOK]
     assert "osm_geocode" in BOOK.tool_names
     assert "query_units" in BOOK.tool_names
-    assert "publish_memo" in BOOK.tool_names
 
 
 def test_q1_do_not_geocode_is_prompt_not_inventory_lock():

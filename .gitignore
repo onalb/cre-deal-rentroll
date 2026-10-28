@@ -1,8 +1,8 @@
 .venv/
 __pycache__/
+.vscode/
 .env
-data/deals/*/units.json
-data/gold/
+gold_eval/gold/
 *.pyc
 .pytest_cache/
 .cursor/*.log

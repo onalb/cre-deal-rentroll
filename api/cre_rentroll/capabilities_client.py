@@ -1,7 +1,7 @@
 """Deal app client for the capabilities gateway.
 
 Capability tools POST {CAPABILITIES_GATEWAY_URL}/mcp/deal. There is no
-in-process vault, geocode, search, memo, vacancy, or prediction fallback.
+in-process vault, geocode, search, vacancy, or prediction fallback.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ CAPABILITY_TOOLS = frozenset(
         "compute_cap_rate",
         "osm_geocode",
         "web_search",
-        "publish_memo",
         "ask_vacancy_agent",
         "ask_prediction_agent",
     }

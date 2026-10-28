@@ -10,7 +10,6 @@ assert.deepEqual(ids, [
   "multi-2",
   "multi-3",
   "locate",
-  "create-memo",
   "underwrite",
   "buy",
   "search-down",

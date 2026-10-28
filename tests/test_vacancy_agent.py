@@ -4,7 +4,6 @@ import inspect
 import json
 
 from cre_rentroll.capabilities_client import GATEWAY_REQUIRED
-from cre_rentroll.mcp_runtime import VAULT_MCP, mcp_server_for
 from cre_rentroll.tools import TOOL_IMPLS, ask_vacancy_agent
 from cre_rentroll.turn_ctx import reset_turn
 
@@ -42,7 +41,6 @@ def test_ask_vacancy_agent_posts_floor_plan(monkeypatch):
     assert seen["arguments"]["floor_plan"] == "1x1 Reno"
     assert seen["arguments"]["username"] == "ada"
     assert TOOL_IMPLS["ask_vacancy_agent"] is ask_vacancy_agent
-    assert mcp_server_for("ask_vacancy_agent") == VAULT_MCP
     source = inspect.getsource(ask_vacancy_agent)
     assert "VacancyAgent" not in source
     assert "_sigmoid" not in source
