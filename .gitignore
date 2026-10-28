@@ -6,5 +6,10 @@ data/gold/
 *.pyc
 .pytest_cache/
 .cursor/*.log
-ui/node_modules/
+node_modules/
 ui/dist/
+/package.json
+/package-lock.json
+/debug-*.log
+/tmp_*
+/Makefile
