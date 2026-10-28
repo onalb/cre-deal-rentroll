@@ -187,13 +187,14 @@ def note_harness_react() -> None:
 
 
 def note_disk_skills(names: tuple[str, ...], found: bool) -> None:
+    """Legacy AgentCore box note. Chat loads skills from the capabilities gateway."""
     if not enabled():
         return
     listed = ", ".join(names) if names else "(none)"
     if found:
-        _emit_box("skills", "ok", f"disk SKILL.md {listed} (registry not used)")
+        _emit_box("skills", "ok", f"legacy disk note {listed} (chat uses the capabilities gateway)")
     else:
-        _emit_box("skills", "skipped", f"no SKILL.md on disk for {listed}")
+        _emit_box("skills", "skipped", f"legacy disk note, no file for {listed}")
 
 
 def note_fastmcp_fallback(name: str) -> None:
@@ -278,29 +279,6 @@ def gateway_call(name: str, arguments: dict[str, Any]) -> str | None:
     if isinstance(result, str):
         return result
     return json.dumps(result, default=str)
-
-
-def load_registry_skills(names: tuple[str, ...]) -> str:
-    if not enabled() or not _env("AGENTCORE_REGISTRY_ID"):
-        return ""
-    chunks: list[str] = []
-    for name in names:
-        recs = _safe("registry", _search_skill, name) or []
-        for rec in recs:
-            desc = rec.get("descriptors") or rec.get("description") or ""
-            text = ""
-            if isinstance(desc, dict):
-                skill = ((desc.get("agentSkills") or {}).get("skillMd") or {}).get("inlineContent")
-                text = skill or json.dumps(desc)[:4000]
-            elif isinstance(desc, str):
-                text = desc
-            if text:
-                chunks.append(f"### skill:{name}\n{text}")
-                break
-    joined = "\n\n".join(chunks)
-    if joined.strip():
-        _emit_box("skills", "ok", f"registry records {', '.join(names)}")
-    return joined
 
 
 def _identity(username: str) -> dict[str, Any] | None:
@@ -750,7 +728,7 @@ def _pulse_builtin() -> dict[str, Any]:
 def _registry_search() -> dict[str, Any] | None:
     rid = _env("AGENTCORE_REGISTRY_ID")
     if not rid:
-        _emit_box("registry", "skipped", "AccessDenied / no registry id; skills on disk")
+        _emit_box("registry", "skipped", "AccessDenied / no registry id; skills from the capabilities gateway")
         return None
     client = _client("bedrock-agentcore")
     resp = client.search_registry_records(
@@ -761,16 +739,6 @@ def _registry_search() -> dict[str, Any] | None:
     recs = resp.get("records") or resp.get("registryRecords") or []
     _emit_box("registry", "ok", f"search_registry_records hits={len(recs)}")
     return {"hits": len(recs)}
-
-
-def _search_skill(name: str) -> list[dict[str, Any]]:
-    rid = _env("AGENTCORE_REGISTRY_ID")
-    client = _client("bedrock-agentcore")
-    kwargs: dict[str, Any] = {"searchQuery": name, "maxResults": 3}
-    if rid:
-        kwargs["registryIds"] = [rid]
-    resp = client.search_registry_records(**kwargs)
-    return list(resp.get("records") or resp.get("registryRecords") or [])
 
 
 def _policy_status() -> dict[str, Any] | None:

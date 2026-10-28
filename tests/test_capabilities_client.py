@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import inspect
 import json
+from pathlib import Path
 
 import httpx
+import pytest
 
 from cre_rentroll.agents import BOOK, load_skill_text
-from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, apply_gateway_menu, call_deal_tool, deal_mcp_url
+from cre_rentroll.capabilities_client import (
+    GATEWAY_REQUIRED,
+    apply_gateway_menu,
+    call_deal_tool,
+    deal_mcp_url,
+    fetch_skills,
+)
 from cre_rentroll.chips import filter_book_tools
 from cre_rentroll.tools import ask_prediction_agent, ask_vacancy_agent, create_plan, query_units
 from cre_rentroll.turn_ctx import reset_turn
@@ -124,16 +133,63 @@ def test_skills_come_from_gateway_when_set(monkeypatch):
     assert "from-gateway" in text
 
 
-def test_skills_stay_on_disk_when_unset(monkeypatch):
+def test_skills_require_gateway_when_unset(monkeypatch):
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
 
     def boom(*_args, **_kwargs):
-        raise AssertionError("disk skills must not HTTP")
+        raise AssertionError("gateway must not be called")
 
     monkeypatch.setattr(httpx, "get", boom)
-    text = load_skill_text(("citation-policy",))
-    assert "citation-policy" in text
-    assert "Cite" in text or "cite" in text.lower()
+    with pytest.raises(RuntimeError, match="capabilities gateway is required"):
+        load_skill_text(("citation-policy",))
+
+
+def test_empty_skill_list_does_not_call_the_gateway(monkeypatch):
+    monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("gateway must not be called")
+
+    monkeypatch.setattr(httpx, "get", boom)
+    assert load_skill_text(()) == ""
+    assert fetch_skills(()) == ""
+
+
+def test_predict_skill_is_a_gateway_get_when_named(monkeypatch):
+    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    requested: list[str] = []
+
+    class Response:
+        text = "# from-gateway\n"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_get(url, **_kwargs):
+        requested.append(url)
+        return Response()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    text = load_skill_text(
+        ("rent-roll-abstract", "citation-policy", "underwriting", "rr-predict")
+    )
+    assert requested == [
+        "http://127.0.0.1:8010/skills/rent-roll-abstract",
+        "http://127.0.0.1:8010/skills/citation-policy",
+        "http://127.0.0.1:8010/skills/underwriting",
+        "http://127.0.0.1:8010/skills/rr-predict",
+    ]
+    assert text.startswith("### skill:rent-roll-abstract\n")
+    assert "### skill:rr-predict\n" in text
+
+
+def test_skill_load_has_no_disk_or_registry_fallback():
+    source = inspect.getsource(load_skill_text) + inspect.getsource(fetch_skills)
+    assert "CRE_SKILLS" not in source
+    assert "SKILL.md" not in source
+    assert "load_registry_skills" not in source
+    root = Path(__file__).resolve().parents[1]
+    assert list(root.glob("skills/**/SKILL.md")) == []
 
 
 class _RpcResponse:

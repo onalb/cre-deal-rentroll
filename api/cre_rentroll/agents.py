@@ -8,7 +8,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from contextvars import copy_context
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable
 
 from cre_rentroll import tools, turn_ctx
@@ -40,19 +39,6 @@ def is_rate_limited(exc: BaseException) -> bool:
     resp = getattr(exc, "response", None)
     return getattr(resp, "status_code", None) == 429
 
-
-def _skills_dir() -> Path:
-    env = os.environ.get("CRE_SKILLS_DIR")
-    if env:
-        return Path(env)
-    here = Path(__file__).resolve()
-    for cand in (here.parents[1] / "skills", here.parents[2] / "skills"):
-        if cand.is_dir():
-            return cand
-    return here.parents[1] / "skills"
-
-
-SKILLS_DIR = _skills_dir()
 
 InventoryName = str
 
@@ -91,31 +77,10 @@ INVENTORIES = {"DealRentroll": BOOK}
 
 
 def load_skill_text(names: tuple[str, ...]) -> str:
-    from cre_rentroll.capabilities_client import fetch_skills, gateway_base
+    """Skill markdown from GET /skills/{name}. No local file and no AgentCore registry."""
+    from cre_rentroll.capabilities_client import fetch_skills
 
-    if gateway_base():
-        return fetch_skills(names)
-    try:
-        from cre_rentroll.agentcore_platform import load_registry_skills
-
-        registered = load_registry_skills(names)
-        if registered.strip():
-            return registered
-    except Exception:
-        pass
-    chunks: list[str] = []
-    for name in names:
-        path = SKILLS_DIR / name / "SKILL.md"
-        if path.is_file():
-            chunks.append(f"### skill:{name}\n{path.read_text(encoding='utf-8')}")
-    text = "\n\n".join(chunks)
-    try:
-        from cre_rentroll.agentcore_platform import note_disk_skills
-
-        note_disk_skills(names, bool(text.strip()))
-    except Exception:
-        pass
-    return text
+    return fetch_skills(names)
 
 
 def system_prompt(inv: Inventory, facts: str) -> str:

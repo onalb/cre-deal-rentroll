@@ -42,9 +42,9 @@ def test_chip_prompt_steers_not_forces():
     assert "vault property" not in text.lower()
     assert "vault property" not in only.lower()
     assert "do not invent a building" in text.lower()
-    root = Path(__file__).resolve().parents[1]
-    rr = (root / "skills" / "rr-predict" / "SKILL.md").read_text(encoding="utf-8")
-    cite = (root / "skills" / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
+    gateway = Path(__file__).resolve().parents[2] / "capabilities-gateway" / "skills"
+    rr = (gateway / "rr-predict" / "SKILL.md").read_text(encoding="utf-8")
+    cite = (gateway / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
     assert "complete answer for this user turn" in rr.lower()
     assert "stop react" in rr.lower()
     assert "did not write" in rr.lower()

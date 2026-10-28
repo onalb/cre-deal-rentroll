@@ -222,8 +222,10 @@ if ($reg) {
   $ids.REGISTRY_ID = $rj.registryId; if (-not $ids.REGISTRY_ID) { $ids.REGISTRY_ID = $rj.registry.registryId }
 }
 if ($ids.REGISTRY_ID) {
+  # Canonical skill files live in the capabilities gateway. The running deal agent fetches them and does not read this registry.
+  $SkillRoot = Join-Path (Split-Path -Parent $Root) "capabilities-gateway\skills"
   foreach ($sk in @("rent-roll-abstract","citation-policy","underwriting")) {
-    $md = Get-Content (Join-Path $Root "skills\$sk\SKILL.md") -Raw
+    $md = Get-Content (Join-Path $SkillRoot "$sk\SKILL.md") -Raw
     $desc = @{ agentSkills = @{ skillMd = @{ inlineContent = $md } } } | ConvertTo-Json -Depth 8 -Compress
     $df = Join-Path $env:TEMP "skill-$sk.json"
     Set-Content $df $desc -Encoding utf8

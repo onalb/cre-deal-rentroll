@@ -184,8 +184,11 @@ def main() -> int:
                 ids["REGISTRY_ARN"] = item.get("arn") or item.get("registryArn")
 
     if ids.get("REGISTRY_ID"):
+        # Canonical skill files live in the capabilities gateway. The running
+        # deal agent fetches GET /skills/{name} and does not read this registry.
+        skill_root = ROOT.parent / "capabilities-gateway" / "skills"
         for sk in ("rent-roll-abstract", "citation-policy", "underwriting"):
-            md = (ROOT / "skills" / sk / "SKILL.md").read_text(encoding="utf-8")
+            md = (skill_root / sk / "SKILL.md").read_text(encoding="utf-8")
             desc = {"agentSkills": {"skillMd": {"inlineContent": md}}}
             df = Path(tempfile.gettempdir()) / f"skill-{sk}.json"
             df.write_text(json.dumps(desc), encoding="utf-8")

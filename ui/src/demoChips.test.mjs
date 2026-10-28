@@ -35,11 +35,11 @@ const agentsPy = readFileSync(
   "utf8",
 );
 const abstractSkill = readFileSync(
-  new URL("../../skills/rent-roll-abstract/SKILL.md", import.meta.url),
+  new URL("../../../capabilities-gateway/skills/rent-roll-abstract/SKILL.md", import.meta.url),
   "utf8",
 );
 const citationSkill = readFileSync(
-  new URL("../../skills/citation-policy/SKILL.md", import.meta.url),
+  new URL("../../../capabilities-gateway/skills/citation-policy/SKILL.md", import.meta.url),
   "utf8",
 );
 assert.match(agentsPy, /short bullet per asked item/);

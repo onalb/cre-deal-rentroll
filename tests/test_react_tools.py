@@ -934,8 +934,9 @@ def test_avg_sqft_skill_and_gold_case():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    abstract = (root / "skills" / "rent-roll-abstract" / "SKILL.md").read_text(encoding="utf-8")
-    cite = (root / "skills" / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
+    gateway = root.parent / "capabilities-gateway" / "skills"
+    abstract = (gateway / "rent-roll-abstract" / "SKILL.md").read_text(encoding="utf-8")
+    cite = (gateway / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
     gold = json.loads((root / "tests" / "gold.json").read_text(encoding="utf-8"))
     assert "avg_sqft" in abstract
     assert "does not specify square footage" in abstract

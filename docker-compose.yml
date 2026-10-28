@@ -38,7 +38,6 @@ services:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
-      CRE_SKILLS_DIR: /app/skills
       GOLD_EVAL_XLSX: /app/data/gold/lacordoba.xlsx
       GOLD_EVAL_CASES: /app/tests/gold.json
       # Capability tools POST this. Host process or the gateway container on 8010.

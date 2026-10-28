@@ -166,10 +166,15 @@ def call_deal_tool(name: str, arguments: dict[str, Any], timeout: float = 180.0)
 
 
 def fetch_skills(names: tuple[str, ...]) -> str:
-    """Skill markdown from GET {gateway}/skills/{name}."""
+    """Skill markdown from GET {gateway}/skills/{name}. No local file.
+
+    An empty name list (out-of-scope turn) returns "" and does not call the gateway.
+    """
+    if not names:
+        return ""
     base = gateway_base()
     if not base:
-        return ""
+        raise RuntimeError(GATEWAY_REQUIRED)
     chunks: list[str] = []
     for name in names:
         response = httpx.get(
@@ -178,5 +183,8 @@ def fetch_skills(names: tuple[str, ...]) -> str:
             follow_redirects=False,
         )
         response.raise_for_status()
-        chunks.append(f"### skill:{name}\n{response.text}")
+        text = response.text.strip()
+        if not text:
+            raise RuntimeError(f"capabilities gateway returned an empty {name} skill")
+        chunks.append(f"### skill:{name}\n{text}")
     return "\n\n".join(chunks)

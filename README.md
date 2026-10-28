@@ -80,7 +80,7 @@ Strands is the agent **framework** (chat loop stays `run_agent` on Runtime). **A
 | Memory | `CreDealRentrollMem-l47sZRGE6Y` STM events + semantic LTM; Dynamo still users + vault | live |
 | Policy | Engine `cre_deal_rentroll_policy-bcwtc8qmov` Cedar `allow_cre_tools` LOG_ONLY on Gateway | live |
 | Payments | unused | skipped (no microtransactions) |
-| Registry | `CreateRegistry` denied for this account root | skipped; skills from disk `skills/` |
+| Registry | `CreateRegistry` denied for this account root | skipped; skills from `GET {CAPABILITIES_GATEWAY_URL}/skills/{name}` |
 | Observability | ADOT/`opentelemetry-instrument` + dashboard `cre-deal-rentroll-agentcore` | live after runtime image |
 | Evaluations | **Batch** over Runtime CloudWatch traces (`deploy/start_batch_evaluation.py`). Live G/C/R is still `score_gcr`. No per-turn `client.evaluate`. | batch |
 
@@ -88,4 +88,4 @@ Resident names on La Cordoba are stripped at ingest and should not be committed.
 
 ## Capability tools
 
-`query_units`, `compute_income`, `compute_noi`, `compute_cap_rate`, `osm_geocode`, `web_search`, `publish_memo`, `ask_vacancy_agent`, and `ask_prediction_agent` POST `{CAPABILITIES_GATEWAY_URL}/mcp/deal`. The deal process does not run that math. `ask_prediction_agent` is forwarded by the gateway to the vacancy app's `ask_vacancy` MCP tool. `ask_vacancy_agent` scores floor plans on the vault roll inside the gateway. `create_plan`, `update_plan`, `update_plan_status`, and `reflection` also POST `{CAPABILITIES_GATEWAY_URL}/mcp/deal`. This process holds the checklist and writes back the rows the gateway returns. `score_gcr` stays in this process. If `CAPABILITIES_GATEWAY_URL` is unset, those tools and the nine capability tools return an error that the capabilities gateway is required.
+`query_units`, `compute_income`, `compute_noi`, `compute_cap_rate`, `osm_geocode`, `web_search`, `publish_memo`, `ask_vacancy_agent`, and `ask_prediction_agent` POST `{CAPABILITIES_GATEWAY_URL}/mcp/deal`. The deal process does not run that math. `ask_prediction_agent` is forwarded by the gateway to the vacancy app's `ask_vacancy` MCP tool. `ask_vacancy_agent` scores floor plans on the vault roll inside the gateway. `create_plan`, `update_plan`, `update_plan_status`, and `reflection` also POST `{CAPABILITIES_GATEWAY_URL}/mcp/deal`. This process holds the checklist and writes back the rows the gateway returns. `score_gcr` stays in this process. Skill markdown is not in this repo. Each in-scope turn fetches `GET {CAPABILITIES_GATEWAY_URL}/skills/{name}` for `rent-roll-abstract`, `citation-policy`, and `underwriting`, and also `rr-predict` when that turn allows prediction. If `CAPABILITIES_GATEWAY_URL` is unset, those tools return an error that the capabilities gateway is required, and skill load fails the same way.

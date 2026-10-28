@@ -10,7 +10,6 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    CRE_SKILLS_DIR=/app/skills \
     PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl nginx \
@@ -20,7 +19,6 @@ COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY api/cre_rentroll /app/cre_rentroll
-COPY skills /app/skills
 COPY --from=uibuild /ui/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 RUN rm -f /etc/nginx/sites-enabled/default

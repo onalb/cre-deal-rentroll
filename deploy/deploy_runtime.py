@@ -106,7 +106,6 @@ def main() -> int:
     extra = {
         "AGENTCORE_INSIDE": "1",
         "AWS_REGION": "us-east-1",
-        "CRE_SKILLS_DIR": "/app/skills",
         "DDB_TABLE": "ml_interview",
         "AGENTCORE_WORKLOAD_NAME": ids["WORKLOAD_NAME"],
         "AGENTCORE_IDENTITY_NAME": ids.get("IDENTITY_NAME") or "cre_deal_rentroll_wli",
@@ -125,6 +124,7 @@ def main() -> int:
         "RR_PREDICT_URL": "https://vacancy-agent.purplegrass-79f82a02.eastus.azurecontainerapps.io",
     }
     env.update(extra)
+    env.pop("CRE_SKILLS_DIR", None)
     env.pop("AGENTCORE_PAYMENT_MANAGER_ARN", None)
     env.pop("AGENTCORE_PAYMENT_MANAGER_ID", None)
     if ids.get("REGISTRY_ID"):

@@ -3,7 +3,6 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    CRE_SKILLS_DIR=/app/skills \
     AGENTCORE_INSIDE=1 \
     DDB_TABLE=ml_interview \
     AWS_REGION=us-east-1 \
@@ -24,7 +23,6 @@ COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY api/cre_rentroll /app/cre_rentroll
-COPY skills /app/skills
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD curl -fsS http://127.0.0.1:8080/ping || exit 1
