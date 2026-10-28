@@ -29,7 +29,7 @@ button.ghost {
   color: var(--ink);
   border: 1px solid var(--line);
 }
-.shell { max-width: 1280px; margin: 0 auto; padding: 1.5rem; min-height: 100vh; display: flex; flex-direction: column; }
+.shell { max-width: 880px; margin: 0 auto; padding: 1.5rem; min-height: 100vh; display: flex; flex-direction: column; }
 .shell[hidden] { display: none; }
 .login-shell { display: grid; place-items: center; }
 .card { background: var(--card); border: 1px solid var(--line); padding: 2rem; max-width: 28rem; }
@@ -38,33 +38,36 @@ h1 { margin: 0.2rem 0 0.8rem; font-size: 2rem; }
 .lede { color: var(--muted); }
 header { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1rem; }
 .who { display: flex; gap: 0.6rem; align-items: center; color: var(--muted); }
-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: minmax(22rem, 1fr);
-  gap: 1rem;
-  flex: 1;
-  min-height: 0;
-  align-items: start;
-}
+main { display: block; }
 .transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 1rem;
+}
+.msg {
+  max-width: 90%;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+.msg.user {
+  align-self: flex-end;
+  background: #e7ddd0;
+}
+.msg.assistant {
+  align-self: flex-start;
   background: var(--card);
   border: 1px solid var(--line);
-  padding: 1rem;
-  overflow: auto;
-  min-height: 22rem;
-  height: 100%;
-  align-self: stretch;
 }
-.msg { margin-bottom: 1rem; }
-.msg .role { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.msg pre { white-space: pre-wrap; margin: 0.25rem 0 0; font-family: inherit; color: var(--ink); }
+.msg pre { white-space: pre-wrap; margin: 0; font-family: inherit; color: var(--ink); }
+.empty { align-self: flex-start; max-width: 90%; margin: 0; }
 .err { color: var(--accent); }
 .working-line {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0.35rem 0 0;
+  margin: 0;
   color: var(--muted);
 }
 .spinner {
@@ -87,37 +90,20 @@ aside { background: var(--card); border: 1px solid var(--line); padding: 1rem; }
 aside.runlog { padding: 0; }
 aside h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
 .vault {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  align-self: start;
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
   padding: 0;
-  width: auto;
-  min-height: 0;
-  height: auto;
   overflow: hidden;
-  transition: width 0.38s cubic-bezier(0.22, 1, 0.36, 1);
-  border-radius: 8px;
-}
-.vault.closed {
-  align-self: start;
-  height: auto;
-  min-height: 0;
-}
-.vault.open {
-  width: 16.5rem;
-  align-self: stretch;
-  min-height: 22rem;
-  height: auto;
   border-radius: 8px;
 }
 .vault-toggle {
-  flex: 0 0 auto;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
   gap: 0.65rem;
+  width: 100%;
   min-height: 2.65rem;
   padding: 0.35rem 0.9rem;
   background: transparent;
@@ -125,14 +111,7 @@ aside h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
   border: 0;
   border-radius: 0;
   cursor: pointer;
-}
-.vault.open .vault-toggle {
-  flex: 0 0 2.6rem;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  min-height: 0;
-  padding: 0.85rem 0 1rem;
+  text-align: left;
 }
 .vault-toggle:hover { color: var(--accent); }
 .vault-horn {
@@ -144,39 +123,19 @@ aside h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
   flex-shrink: 0;
   transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.vault.open .vault-horn {
-  border-left: 0;
-  border-right: 10px solid var(--accent);
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  transform: rotate(180deg);
-}
+.vault.open .vault-horn { transform: rotate(180deg); }
 .vault-spine {
-  writing-mode: horizontal-tb;
-  transform: none;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   font-size: 0.72rem;
 }
-.vault.open .vault-spine {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-}
 .vault-body {
   display: none;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.vault.open .vault-body {
-  display: block;
-  min-width: 12.5rem;
-  padding: 1rem 1rem 1rem 0.15rem;
+  padding: 0 1rem 0.85rem;
+  max-height: 16rem;
   overflow: auto;
-  pointer-events: auto;
 }
+.vault.open .vault-body { display: block; }
 .runlog {
   margin-top: 0.75rem;
   overflow: visible;
@@ -351,7 +310,34 @@ aside h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
 .log-live { margin-top: 0.6rem; font-size: 0.78rem; }
 .facts { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
 .facts li { margin-bottom: 0.35rem; }
-.composer { margin-top: 0.75rem; }
+.composer { margin-top: 1rem; }
+.composer .err { margin: 0 0 0.5rem; }
+.ask {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  row-gap: 8px;
+  align-items: center;
+}
+.ask input[type="text"] {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ask button.send {
+  grid-column: 2;
+  grid-row: 1;
+}
+.attach {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
 textarea, input[type="text"], .login-card input {
   width: 100%;
   border: 1px solid var(--line);
@@ -359,7 +345,7 @@ textarea, input[type="text"], .login-card input {
   padding: 0.6rem;
   border-radius: 4px;
 }
-.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.55rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 10px; }
 button.chip {
   display: inline-flex;
   align-items: center;
@@ -447,32 +433,16 @@ button.case-tip-close:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
-.file { font-size: 0.85rem; color: var(--muted); }
-.file input { display: block; margin-top: 0.2rem; }
+.file {
+  max-width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
 .fname { font-size: 0.85rem; }
 .check { font-size: 0.85rem; color: var(--muted); }
 .empty, .hint { color: var(--muted); }
 code { font-family: ui-monospace, Consolas, monospace; font-size: 0.86em; }
 @media (max-width: 960px) {
-  main {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(22rem, 1fr) auto;
-    align-items: stretch;
-  }
-  .vault, .vault.open, .vault.closed {
-    width: 100%;
-    border-radius: 8px;
-    min-height: 0;
-    align-self: start;
-  }
-  .vault.open .vault-toggle { flex-direction: row; flex-basis: auto; padding: 0.55rem 0.8rem; }
-  .vault.open .vault-spine { writing-mode: horizontal-tb; transform: none; }
-  .vault.open .vault-horn {
-    border-left: 7px solid transparent;
-    border-right: 7px solid transparent;
-    border-top: 10px solid var(--accent);
-    border-bottom: 0;
-    transform: rotate(180deg);
-  }
   .runlog { border-radius: 8px; }
 }

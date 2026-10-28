@@ -438,13 +438,11 @@ export default function App() {
           )}
           {msgs.map((m, i) => (
             <article key={i} className={`msg ${m.role} ${m.kind || ""}`}>
-              <span className="role">{m.role}</span>
               <pre>{displayContent(m)}</pre>
             </article>
           ))}
           {busy && (
             <article className="msg assistant working" aria-live="polite" aria-busy="true">
-              <span className="role">assistant</span>
               <p className="working-line">
                 <span className="spinner" aria-hidden="true" />
                 Assistant is working…
@@ -453,6 +451,70 @@ export default function App() {
           )}
           <div ref={bottom} />
         </section>
+
+        <form className="composer" onSubmit={send}>
+          {error && <p className="err">{error}</p>}
+          <div className="ask">
+            <input
+              type="text"
+              placeholder="Ask a CRE question, or attach a rent roll…"
+              value={text}
+              disabled={busy}
+              onChange={(e) => {
+                disarmCompactLog();
+                setText(e.target.value);
+              }}
+            />
+            <button className="send" type="submit" disabled={busy}>
+              {busy ? "Running…" : "Send"}
+            </button>
+            <div className="attach">
+              <input
+                ref={fileInput}
+                className="file"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                disabled={busy}
+                onChange={(e) => {
+                  disarmCompactLog();
+                  setFile(e.target.files?.[0] || null);
+                }}
+              />
+              {file ? (
+                <span className="fname">will attach {file.name}</span>
+              ) : session?.vault ? (
+                <span className="fname hint">saved in vault — not re-sent</span>
+              ) : null}
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={searchFail}
+                  disabled={busy}
+                  onChange={(e) => setSearchFail(e.target.checked)}
+                />
+                search-down
+              </label>
+            </div>
+          </div>
+        </form>
+
+        <div className="chips" aria-label="Demo questions">
+          {DEMO_CHIPS.map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              className={`chip chip-${chip.level}${chipId === chip.id ? " on" : ""}`}
+              disabled={busy}
+              aria-pressed={chipId === chip.id}
+              onClick={() => fillChip(chip)}
+              title={chip.prompt}
+            >
+              <span className="chip-dot" aria-hidden="true" />
+              {chip.label}
+            </button>
+          ))}
+        </div>
+
         <aside className={`vault ${vaultExpanded ? "open" : "closed"}`}>
           <button
             type="button"
@@ -481,12 +543,11 @@ export default function App() {
             </ul>
           </div>
         </aside>
-      </main>
 
-      <aside
-        className={`runlog ${logOpen || logExpanded ? "open" : "closed"}${logExpanded ? " expanded" : ""}`}
-        aria-live="polite"
-      >
+        <aside
+          className={`runlog ${logOpen || logExpanded ? "open" : "closed"}${logExpanded ? " expanded" : ""}`}
+          aria-live="polite"
+        >
         <div className="runlog-bar">
           <button
             type="button"
@@ -584,69 +645,8 @@ export default function App() {
           )}
           <div ref={logEnd} />
         </div>
-      </aside>
-
-      <form className="composer" onSubmit={send}>
-        {error && <p className="err">{error}</p>}
-        <textarea
-          rows={3}
-          placeholder="Ask a CRE question, or attach a rent roll…"
-          value={text}
-          disabled={busy}
-          onChange={(e) => {
-            disarmCompactLog();
-            setText(e.target.value);
-          }}
-        />
-        <div className="chips" aria-label="Demo questions">
-          {DEMO_CHIPS.map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              className={`chip chip-${chip.level}${chipId === chip.id ? " on" : ""}`}
-              disabled={busy}
-              aria-pressed={chipId === chip.id}
-              onClick={() => fillChip(chip)}
-              title={chip.prompt}
-            >
-              <span className="chip-dot" aria-hidden="true" />
-              {chip.label}
-            </button>
-          ))}
-        </div>
-        <div className="row">
-          <label className="file">
-            Attach CSV/xlsx
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              disabled={busy}
-              onChange={(e) => {
-                disarmCompactLog();
-                setFile(e.target.files?.[0] || null);
-              }}
-            />
-          </label>
-          {file ? (
-            <span className="fname">will attach {file.name}</span>
-          ) : session?.vault ? (
-            <span className="fname hint">saved in vault — not re-sent</span>
-          ) : null}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={searchFail}
-              disabled={busy}
-              onChange={(e) => setSearchFail(e.target.checked)}
-            />
-            search-down
-          </label>
-          <button type="submit" disabled={busy}>
-            {busy ? "Running…" : "Send"}
-          </button>
-        </div>
-      </form>
+        </aside>
+      </main>
     </div>
     <EvalPage username={username} hidden={!showEval} onBack={() => setView("chat")} />
     </>
