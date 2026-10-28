@@ -9,7 +9,7 @@ import httpx
 from cre_rentroll.agents import BOOK, load_skill_text
 from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, apply_gateway_menu, call_deal_tool, deal_mcp_url
 from cre_rentroll.chips import filter_book_tools
-from cre_rentroll.tools import ask_prediction_agent, ask_vacancy_agent, query_units
+from cre_rentroll.tools import ask_prediction_agent, ask_vacancy_agent, create_plan, query_units
 from cre_rentroll.turn_ctx import reset_turn
 
 
@@ -36,6 +36,19 @@ def test_menu_keeps_the_same_names_when_gateway_is_set(monkeypatch):
     assert "fit_vacancy" not in names
     assert deal_mcp_url() == "http://127.0.0.1:8010/mcp/deal"
     assert apply_gateway_menu(BOOK.tool_names) == BOOK.tool_names
+
+
+def test_create_plan_requires_gateway_when_unset(monkeypatch):
+    monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("gateway must not be called")
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", boom)
+    reset_turn("nobody")
+    body = json.loads(create_plan("1. query_units"))
+    assert body["ok"] is False
+    assert body["error"] == GATEWAY_REQUIRED
 
 
 def test_query_units_requires_gateway_when_unset(monkeypatch):

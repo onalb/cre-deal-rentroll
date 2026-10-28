@@ -138,7 +138,8 @@ def book_mcp_impls() -> dict[str, Callable[..., str]]:
 def _maybe_gateway(fn: Callable[..., Any], name: str) -> Callable[..., Any]:
     """Capability tools are only the capabilities-gateway client in the function body.
 
-    Harness tools stay in-process. AgentCore is not a fallback for the nine tools.
+    The four checklist tools call the gateway from their own bodies. score_gcr
+    stays in-process. AgentCore is not a fallback for the nine work tools.
     """
     from cre_rentroll.capabilities_client import CAPABILITY_TOOLS
 

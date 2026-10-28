@@ -1,7 +1,8 @@
-"""In-process deal-rentroll MCP — scratchpad, search, memo. Same interpreter (not stdio).
+"""In-process deal-rentroll MCP. Same interpreter (not stdio).
 
-create_plan / update_plan / update_plan_status / reflection / score_gcr stay off deal-vault: they need
-turn_ctx checklist state. Live Agent talks to this FastMCP object in-process.
+create_plan / update_plan / update_plan_status / reflection call the capabilities
+gateway and write the returned checklist into turn context. score_gcr stays here.
+Live Agent talks to this FastMCP object in-process.
 """
 
 from __future__ import annotations

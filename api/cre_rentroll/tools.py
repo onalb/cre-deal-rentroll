@@ -579,6 +579,138 @@ def plan_log_message(items: list[dict[str, str]], diff: dict[str, Any], *, tool:
     return f"{tool} — checklist updated ({delta})\n{body}"
 
 
+_SEARCH_DOWN_MODEL = (
+    "Search already failed (unavailable). Marked search [incomplete]. "
+    "Do not call web_search again. Write your own user-facing sentence, then "
+    "score_gcr that sentence. Mention cap rates / comps / metro news only if "
+    "the user asked for those. Do not copy this tool result to the user."
+)
+
+
+def _last_work_observation() -> tuple[str, str]:
+    """Last real work tool this turn, and ok or error. Empty when none has run."""
+    tool = ""
+    status = ""
+    for row in turn_ctx.traces() or []:
+        name = str(row.get("name") or "")
+        if name not in WORK_TOOL_NAMES:
+            continue
+        tool = name
+        result = row.get("result")
+        blob = str(result or "").lower()
+        if (isinstance(result, dict) and result.get("ok") is False) or (
+            "forced failure" in blob or "search-down" in blob
+        ):
+            status = "error"
+        else:
+            status = "ok"
+    return tool, status
+
+
+def _deal_consecutive_hint(body: dict[str, Any]) -> str:
+    if body.get("all_terminal"):
+        nxt = "Next is score_gcr — do not loop update_plan_status."
+    elif body.get("next_work"):
+        nxt = f"Next is {body['next_work']} — do not loop update_plan_status."
+    else:
+        nxt = "Next is the pending work tool — do not loop update_plan_status."
+    return "Rejected consecutive update_plan_status with no intervening work tool. " + nxt
+
+
+def _deal_reflection_text(body: dict[str, Any]) -> str:
+    text = str(body.get("analysis") or "").strip()
+    if body.get("need_replan"):
+        if web_search_failed():
+            return (
+                "Search already failed (unavailable). Do not call web_search again. "
+                "Mark the search item [incomplete], then write your own sentence and "
+                "score_gcr that sentence. Mention cap rates / comps / metro news only "
+                "if the user asked for those. Do not copy this tool result to the user."
+            )
+        from cre_rentroll.eval_service import (
+            ask_is_conceptual,
+            ask_is_market_area,
+            need_replan_hint,
+        )
+
+        query = turn_ctx.eval_query() or ""
+        if ask_is_conceptual(query) or ask_is_market_area(query):
+            return need_replan_hint(query)
+        return (
+            "Need replan: call update_plan with the NEW remaining work. "
+            "Completed/incomplete rows stay on the list. Do not call create_plan again. "
+            "Status-only changes use update_plan_status."
+        )
+    return f"Reflection stored: {text}" if text else "Reflection stored."
+
+
+def _deal_model_text(name: str, body: dict[str, Any]) -> str:
+    reason = str(body.get("reason") or "")
+    if name == "reflection":
+        return _deal_reflection_text(body)
+    if reason == "search_down":
+        return _SEARCH_DOWN_MODEL
+    if reason == "consecutive_status":
+        hint = _deal_consecutive_hint(body)
+        plan = str(body.get("plan") or "")
+        body["hint"] = hint
+        body["log"] = f"update_plan_status — Plan unchanged\n{hint}\n{plan}"
+        return f"Plan unchanged. {hint}\n{plan}"
+    return str(body.get("text") or "")
+
+
+def _dispatch_plan(name: str, model_args: dict[str, Any]) -> str:
+    """POST /mcp/deal. The gateway returns the next checklist. No local fallback."""
+    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool, gateway_base
+
+    recorded = dict(model_args)
+    if name == "reflection":
+        recorded["analysis"] = str(model_args.get("analysis") or "").strip()
+        recorded["need_replan"] = bool(model_args.get("need_replan"))
+    if not gateway_base():
+        err = {"ok": False, "error": GATEWAY_REQUIRED, "rejected": True}
+        turn_ctx.record(name, recorded, err)
+        return json.dumps(err)
+    last_tool, last_status = _last_work_observation()
+    remote = dict(recorded)
+    remote["checklist"] = turn_ctx.checklist()
+    remote["last_work_tool"] = last_tool
+    remote["last_work_status"] = last_status
+    remote["ran_ok"] = sorted(_work_tools_ran_ok())
+    remote["status_since_work"] = _consecutive_status_without_work()
+    try:
+        body = json.loads(call_deal_tool(name, remote))
+    except Exception as exc:
+        err = {
+            "ok": False,
+            "error": str(exc),
+            "rejected": True,
+            "source": "capabilities-gateway",
+        }
+        turn_ctx.record(name, recorded, err)
+        return json.dumps(err)
+    if not isinstance(body, dict):
+        err = {
+            "ok": False,
+            "error": "capabilities gateway returned a non-object",
+            "rejected": True,
+        }
+        turn_ctx.record(name, recorded, err)
+        return json.dumps(err)
+    checklist = body.get("checklist")
+    if isinstance(checklist, list):
+        turn_ctx.set_checklist(checklist)
+    if name != "reflection":
+        turn_ctx.set_llm_plan(str(body.get("plan") or ""))
+    shown = _deal_model_text(name, body)
+    if name == "reflection":
+        body["analysis"] = recorded["analysis"]
+        body["need_replan"] = recorded["need_replan"]
+        body["ok"] = True
+    turn_ctx.record(name, recorded, body)
+    return shown
+
+
 def create_plan(tasks: str) -> str:
     """Create this turn's ReAct checklist once. Intelligence is in the args.
 
@@ -641,48 +773,9 @@ def create_plan(tasks: str) -> str:
     counts for existence/yes-no rather than extra checklist items.
 
     What: `tasks` is a numbered checklist (string, JSON list, or items with status).
-    How: Stores the list and emits the initial plan. A second call is rejected.
+    How: Stores the list and emits the initial plan.     A second call is rejected.
     """
-    previous = turn_ctx.checklist()
-    if previous:
-        plan = format_checklist(previous)
-        payload = {
-            "plan": plan,
-            "items": previous,
-            "diff": checklist_diff(previous, previous),
-            "changed": False,
-            "log": "",
-            "ok": False,
-            "rejected": True,
-            "hint": (
-                "Checklist already exists. Use update_plan_status for statuses, "
-                "or update_plan to replace the list — do not call create_plan again."
-            ),
-        }
-        turn_ctx.record("create_plan", {"tasks": tasks}, payload)
-        return (
-            "Checklist already exists. Use update_plan_status for statuses, "
-            "or update_plan to replace the list — do not call create_plan again.\n"
-            f"{plan}"
-        )
-    items = parse_task_items(tasks)
-    diff = checklist_diff([], items)
-    plan = format_checklist(items)
-    turn_ctx.set_checklist(items)
-    turn_ctx.set_llm_plan(plan)
-    log = plan_log_message(items, diff, tool="create_plan")
-    payload = {
-        "plan": plan,
-        "items": items,
-        "diff": diff,
-        "changed": True,
-        "log": log,
-        "ok": True,
-    }
-    turn_ctx.record("create_plan", {"tasks": tasks}, payload)
-    if not plan:
-        return "Plan stored (empty checklist)."
-    return f"Plan stored (initial checklist):\n{plan}"
+    return _dispatch_plan("create_plan", {"tasks": tasks})
 
 
 def update_plan(tasks: str) -> str:
@@ -704,78 +797,7 @@ def update_plan(tasks: str) -> str:
     How: Keeps existing [completed] and [incomplete] rows, then appends the new
     items. Does not drop done work. Duplicate text of a kept row is skipped.
     """
-    previous = turn_ctx.checklist()
-    if not previous:
-        payload = {
-            "plan": "",
-            "items": [],
-            "diff": checklist_diff([], []),
-            "changed": False,
-            "log": "",
-            "ok": False,
-            "rejected": True,
-            "hint": "No checklist yet. Call create_plan first with the full numbered list.",
-        }
-        turn_ctx.record("update_plan", {"tasks": tasks}, payload)
-        return "No checklist yet. Call create_plan first with the full numbered list."
-    incoming = parse_task_items(tasks)
-    if web_search_failed() and incoming and all(_is_search_task(it["text"]) for it in incoming):
-        items = _mark_search_incomplete(previous)
-        diff = checklist_diff(previous, items)
-        plan = format_checklist(items)
-        turn_ctx.set_checklist(items)
-        turn_ctx.set_llm_plan(plan)
-        log = plan_log_message(items, diff, tool="update_plan")
-        payload = {
-            "plan": plan,
-            "items": items,
-            "diff": diff,
-            "changed": bool(diff["changed"]),
-            "log": log,
-            "ok": True,
-            "search_down": True,
-        }
-        turn_ctx.record("update_plan", {"tasks": tasks}, payload)
-        return (
-            "Search already failed (unavailable). Marked search [incomplete]. "
-            "Do not call web_search again. Write your own user-facing sentence, then "
-            "score_gcr that sentence. Mention cap rates / comps / metro news only if "
-            "the user asked for those. Do not copy this tool result to the user."
-        )
-    if not incoming:
-        plan = format_checklist(previous)
-        payload = {
-            "plan": plan,
-            "items": previous,
-            "diff": checklist_diff(previous, previous),
-            "changed": False,
-            "log": "",
-            "ok": False,
-            "rejected": True,
-            "hint": "update_plan needs a numbered list of new tasks.",
-        }
-        turn_ctx.record("update_plan", {"tasks": tasks}, payload)
-        return f"Kept original checklist (empty replacement).\n{plan}"
-    items = merge_replan_checklist(previous, incoming)
-    diff = checklist_diff(previous, items)
-    plan = format_checklist(items)
-    turn_ctx.set_checklist(items)
-    turn_ctx.set_llm_plan(plan)
-    log = plan_log_message(items, diff, tool="update_plan")
-    payload = {
-        "plan": plan,
-        "items": items,
-        "diff": diff,
-        "changed": bool(diff["changed"]),
-        "log": log,
-        "ok": True,
-        "replaced": True,
-        "kept_completed": [
-            it["text"] for it in items if it["status"] in _TERMINAL_STATUSES
-        ],
-    }
-    turn_ctx.record("update_plan", {"tasks": tasks}, payload)
-    return f"Plan replaced (kept completed/incomplete):\n{log}"
+    return _dispatch_plan("update_plan", {"tasks": tasks})
 
 
 def update_plan_status(tasks: str) -> str:
@@ -808,75 +830,7 @@ def update_plan_status(tasks: str) -> str:
     field the tools cannot provide. Do not retry that item.
     How: Matches by item text and applies status. Extra unmatched lines are ignored.
     """
-    previous = turn_ctx.checklist()
-    if not previous:
-        payload = {
-            "plan": "",
-            "items": [],
-            "diff": checklist_diff([], []),
-            "changed": False,
-            "log": "",
-            "ok": False,
-            "rejected": True,
-            "hint": "No checklist yet. Call create_plan first with the full numbered list.",
-        }
-        turn_ctx.record("update_plan_status", {"tasks": tasks}, payload)
-        return "No checklist yet. Call create_plan first with the full numbered list."
-    if _consecutive_status_without_work():
-        plan = format_checklist(previous)
-        hint = (
-            "Rejected consecutive update_plan_status with no intervening work tool. "
-            + _next_status_hint(previous)
-        )
-        log = f"update_plan_status — Plan unchanged\n{hint}\n{plan}"
-        payload = {
-            "plan": plan,
-            "items": previous,
-            "diff": checklist_diff(previous, previous),
-            "changed": False,
-            "log": log,
-            "ok": False,
-            "rejected": True,
-            "hint": hint,
-        }
-        turn_ctx.record("update_plan_status", {"tasks": tasks}, payload)
-        return f"Plan unchanged. {hint}\n{plan}"
-    previous = _explode_task_items(previous)
-    incoming = parse_task_items(tasks)
-    if incoming and _tasks_omit_status_tags(tasks):
-        items = _infer_completed_from_untagged(previous, incoming)
-        matched = sum(
-            1 for it in previous if _task_key(it["text"]) in {_task_key(x["text"]) for x in incoming}
-        )
-    else:
-        items, matched = apply_status_updates(previous, incoming)
-    diff = checklist_diff(previous, items)
-    if not matched and incoming:
-        diff = {**diff, "replaced_ignored": True}
-    plan = format_checklist(items)
-    turn_ctx.set_checklist(items)
-    turn_ctx.set_llm_plan(plan)
-    log = plan_log_message(items, diff, tool="update_plan_status")
-    payload = {
-        "plan": plan,
-        "items": items,
-        "diff": diff,
-        "changed": bool(diff["changed"]),
-        "log": log,
-        "ok": True,
-        "matched": matched,
-    }
-    turn_ctx.record("update_plan_status", {"tasks": tasks}, payload)
-    if not matched and incoming:
-        return (
-            "Kept original checklist (incoming items did not match). "
-            "Use update_plan_status with the same items and new statuses — "
-            "do not replace the list here. Call update_plan to write a new plan.\n"
-            f"{plan}"
-        )
-    if diff["changed"]:
-        return f"Plan updated:\n{log}"
-    return log
+    return _dispatch_plan("update_plan_status", {"tasks": tasks})
 
 
 def reflection(analysis: str, need_replan: bool = False) -> str:
@@ -911,33 +865,10 @@ def reflection(analysis: str, need_replan: bool = False) -> str:
     How: Stores analysis in turn context. If need_replan is true, this function does
     not rewrite the inventory — call update_plan with the new numbered list.
     """
-    text = str(analysis or "").strip()
-    turn_ctx.note_llm_kind("reflection")
-    payload = {"analysis": text, "need_replan": bool(need_replan), "ok": True}
-    turn_ctx.record("reflection", {"analysis": text, "need_replan": bool(need_replan)}, payload)
-    if need_replan:
-        if web_search_failed():
-            return (
-                "Search already failed (unavailable). Do not call web_search again. "
-                "Mark the search item [incomplete], then write your own sentence and "
-                "score_gcr that sentence. Mention cap rates / comps / metro news only "
-                "if the user asked for those. Do not copy this tool result to the user."
-            )
-        from cre_rentroll.eval_service import (
-            ask_is_conceptual,
-            ask_is_market_area,
-            need_replan_hint,
-        )
-
-        q = turn_ctx.eval_query() or ""
-        if ask_is_conceptual(q) or ask_is_market_area(q):
-            return need_replan_hint(q)
-        return (
-            "Need replan: call update_plan with the NEW remaining work. "
-            "Completed/incomplete rows stay on the list. Do not call create_plan again. "
-            "Status-only changes use update_plan_status."
-        )
-    return f"Reflection stored: {text}" if text else "Reflection stored."
+    return _dispatch_plan(
+        "reflection",
+        {"analysis": str(analysis or ""), "need_replan": bool(need_replan)},
+    )
 
 
 def ingest_noop_doc() -> str:
