@@ -347,10 +347,10 @@ textarea, input[type="text"], .login-card input {
 }
 .split {
   border: 0;
-  border-top: 1px solid var(--line);
-  margin: 1.25rem 0 0;
+  border-top: 1px solid #b5a890;
+  margin: 2rem 0;
 }
-.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0; }
 button.chip {
   display: inline-flex;
   align-items: center;
