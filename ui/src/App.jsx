@@ -498,6 +498,8 @@ export default function App() {
           </div>
         </form>
 
+        <hr className="split" />
+
         <div className="chips" aria-label="Demo questions">
           {DEMO_CHIPS.map((chip) => (
             <button
