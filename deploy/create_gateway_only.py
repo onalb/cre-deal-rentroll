@@ -47,15 +47,9 @@ def main():
         "AWS_IAM",
         "--protocol-configuration",
         f"file://{proto_path}",
-        "--policy-engine-configuration",
-        f"arn={ids['POLICY_ENGINE_ARN']},mode=LOG_ONLY",
     ]
     code, data, msg = aws_json(args)
     print("gw", code, msg[:700])
-    if code != 0:
-        args = args[:-2]
-        code, data, msg = aws_json(args)
-        print("gw no-policy", code, msg[:700])
     if data:
         g = data.get("gateway") or data
         ids["GATEWAY_ID"] = g.get("gatewayId") or data.get("gatewayId")

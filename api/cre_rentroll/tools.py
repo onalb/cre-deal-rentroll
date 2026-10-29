@@ -643,14 +643,17 @@ def _deal_model_text(name: str, body: dict[str, Any]) -> str:
 
 
 def _dispatch_plan(name: str, model_args: dict[str, Any]) -> str:
-    """POST /mcp/deal. The gateway returns the next checklist. No local fallback."""
-    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool, gateway_base
+    """POST the one MCP. The gateway returns the next checklist. No local fallback."""
+    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool
+    from cre_rentroll.mcp_gateway import mcp_url
 
     recorded = dict(model_args)
     if name == "reflection":
         recorded["analysis"] = str(model_args.get("analysis") or "").strip()
         recorded["need_replan"] = bool(model_args.get("need_replan"))
-    if not gateway_base():
+    from cre_rentroll.capabilities_client import gateway_base
+
+    if not mcp_url() and not gateway_base():
         err = {"ok": False, "error": GATEWAY_REQUIRED, "rejected": True}
         turn_ctx.record(name, recorded, err)
         return json.dumps(err)
@@ -847,16 +850,34 @@ def ingest_noop_doc() -> str:
 
 def _capability(name: str, arguments: dict[str, Any]) -> str:
     """POST this tool to the capabilities gateway. No local math."""
-    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool, gateway_base
+    from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool
+    from cre_rentroll.mcp_gateway import mcp_url
 
     payload_args = {key: value for key, value in arguments.items() if value is not None}
     user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
-    if not gateway_base():
+    from cre_rentroll.capabilities_client import gateway_base
+
+    if not mcp_url() and not gateway_base():
         err = {"ok": False, "error": GATEWAY_REQUIRED}
         turn_ctx.record(name, payload_args, err)
         return json.dumps(err)
     remote_args = dict(payload_args)
     remote_args["username"] = user
+    if mcp_url() and name in {
+        "query_units",
+        "compute_income",
+        "compute_noi",
+        "compute_cap_rate",
+        "ask_vacancy_agent",
+    }:
+        try:
+            from cre_rentroll.vault import load_roll
+
+            roll = load_roll(user)
+        except Exception:
+            roll = None
+        if roll is not None:
+            remote_args["roll"] = roll.model_dump()
     if name in {
         "query_units",
         "compute_income",
@@ -907,7 +928,7 @@ def query_units(occupancy: str | None = None, vacant_only: bool = False) -> str:
     typical unit size (sqft). After ingest.
     What: occupancy filters unit occupancy status only (Occupied, Vacant, or
     all; omit or all = unfiltered). vacant_only lists vacancies.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool query_units. Returns JSON
+    How: POST the one MCP tool query_units. Returns JSON
     summaries — never tenant names (PII already stripped).
     One unfiltered query_units returns unit_count, occupied_count, vacant_count,
     occupancy_pct, mtm_count, and avg_sqft (mean of units with sqft>0; null if
@@ -933,7 +954,7 @@ def compute_income(vacant_fill_rent: float | None = None) -> str:
     occupied / no-vacant income estimate from the vaulted roll.
     What: optional vacant_fill_rent — monthly $ the user stated to fill each vacant
     unit (scenario). Omit for vault/asking-rent full occupancy.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool compute_income.
+    How: POST the one MCP tool compute_income.
     in_place_monthly is occupied units only; vacant in-place is zero.
     Return JSON with monthly, annualized, occupied_count, vacant_count,
     occupancy_pct, mtm_count (units on month-to-month leases),
@@ -960,7 +981,7 @@ def compute_noi(operating_expenses: float | None = None) -> str:
 
     When: underwriting / Q3 when the user states expenses.
     What: operating_expenses annual dollars, or omit.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool compute_noi.
+    How: POST the one MCP tool compute_noi.
     If expenses missing, the gateway returns noi_incomplete=true — do not guess opex.
     When not: Q1 abstract; location-only questions.
     If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
@@ -974,7 +995,7 @@ def compute_cap_rate(ask_price: float, noi: float | None = None) -> str:
 
     When: underwriting / Q3 only if the user gives an ask price.
     What: ask_price required; noi optional (else income is not a true NOI cap).
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool compute_cap_rate.
+    How: POST the one MCP tool compute_cap_rate.
     If using income not NOI, the gateway flags implied_on_income=true.
     When not: Q1, Q2, or when no ask was provided — skip implied cap.
     If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
@@ -988,7 +1009,7 @@ def osm_geocode(query: str) -> str:
 
     When: Locator / Q2. Always call even if ingest left an address hint.
     What: query string — hint address or property name + city.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool osm_geocode.
+    How: POST the one MCP tool osm_geocode.
     Returns display_name, lat, lon. On error, say so (harness replans).
     When not: RollAbstractor / Q1; Underwriter / Q3 (OSM is forbidden there).
     Query must be a place or street+city — never a CSV/xlsx filename.
@@ -1014,7 +1035,7 @@ def web_search(query: str, max_results: int = 5) -> str:
     geocode — never invent a metro). One-item create_plan is enough. Never
     require a spreadsheet for that ask. Python does not write a canned figure.
     What: query string; max_results default 5.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool web_search.
+    How: POST the one MCP tool web_search.
     Returns title/href/snippet JSON. On failure the error is raised so the
     harness can reflect and replan (do not loop).
     When not: Q1 rent-roll abstract — forbidden. Do not search for tenant names.
@@ -1131,7 +1152,7 @@ def ask_vacancy_agent(floor_plan: str | None = None) -> str:
     probability a unit type is vacant. A headcount of vacant units is
     query_units, not this tool.
     What: optional floor_plan — one plan name. Omit to score every plan.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool ask_vacancy_agent.
+    How: POST the one MCP tool ask_vacancy_agent.
     The gateway fits a logistic regression on this building's vault roll and
     returns a probability per plan. No tenant names. Cite those probabilities.
     Do not estimate rent here. This does not call the vacancy app.
@@ -1149,7 +1170,7 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
     name or renovated yes/no after that agent asked which group.
     When not: current occupancy or in-place rent (query_units / compute_income),
     floor-plan vacant probability (ask_vacancy_agent), map, weather.
-    How: POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tool ask_prediction_agent with
+    How: POST the one MCP tool ask_prediction_agent with
     this call's horizon_months and question. The gateway forwards to the vacancy
     app MCP ask_vacancy. Pass THIS user question. Do not invent a building.
     Never upload or train. If the gateway says the building is not trained or

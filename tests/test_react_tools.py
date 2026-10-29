@@ -490,7 +490,7 @@ def test_harness_inventory_emit_is_not_step_plan(monkeypatch):
     inv_msgs = [row["message"] for row in seen if row["step"] == "inventory"]
     plan_rows = [row for row in seen if row["step"] == "plan"]
     skill_rows = [row for row in seen if row["step"] == "skills"]
-    assert any("full tool menu" in m and "book" in m for m in inv_msgs)
+    assert any("full tool menu" in m and "book" in m and "query_units" in m for m in inv_msgs)
     assert not any("RollAbstractor" in m for m in inv_msgs)
     assert not any("(LLM)" in m for m in inv_msgs)
     assert len(skill_rows) == 1
@@ -913,13 +913,14 @@ def test_vault_tools_post_to_deal_mcp_and_have_no_local_math(monkeypatch):
     from cre_rentroll.capabilities_client import GATEWAY_REQUIRED
 
     reset_turn("ada")
-    monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     missing = json.loads(query_units())
     assert missing["ok"] is False
     assert "capabilities gateway is required" in missing["error"]
     assert missing["error"] == GATEWAY_REQUIRED
 
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     seen: list[dict] = []
 
     def fake(name, arguments, timeout=180.0):

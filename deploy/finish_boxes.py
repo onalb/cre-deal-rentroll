@@ -56,8 +56,6 @@ def main() -> int:
         "--protocol-configuration",
         f"file://{proto_path}",
     ]
-    if ids.get("POLICY_ENGINE_ARN"):
-        args += ["--policy-engine-configuration", f"arn={ids['POLICY_ENGINE_ARN']},mode=LOG_ONLY"]
     code, data, msg = aws_json(args)
     print("gw", code, msg[:600])
     if data:
@@ -125,10 +123,10 @@ def main() -> int:
     ids["ONLINE_EVAL_ARN"] = (
         "arn:aws:bedrock-agentcore:us-east-1:226721156429:online-evaluation-config/cre_deal_rentroll_online-Y9tvcwAgAk"
     )
-    ids["POLICY_ARN"] = (
-        "arn:aws:bedrock-agentcore:us-east-1:226721156429:policy-engine/"
-        "cre_deal_rentroll_policy-bcwtc8qmov/policy/allow_cre_tools-m8kwxuqqwc"
-    )
+    ids.pop("POLICY_ENGINE_ID", None)
+    ids.pop("POLICY_ENGINE_ARN", None)
+    ids.pop("POLICY_ID", None)
+    ids.pop("POLICY_ARN", None)
     OUT.write_text(json.dumps(ids, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(ids, indent=2))
     return 0

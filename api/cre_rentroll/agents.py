@@ -182,7 +182,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "query_units; "
         + (
             "12-month occupancy / expirations / MTM waterfall / loss-to-lease / "
-            "predicted occupancy → one ask_prediction_agent (capabilities gateway /mcp/deal), "
+            "predicted occupancy → one ask_prediction_agent on the one MCP, "
             f"not query_units and not {floor_tool}; "
             "if that tool says the building is not trained or asks which floor plan "
             "(bullet list of plans, no probabilities), quote that as the user answer "

@@ -203,6 +203,9 @@ def run_task(
     run_id = str(uuid.uuid4())[:8]
     shown_user = persist_as or user_visible(message)
     llm_user = shown_user
+    from cre_rentroll.mcp_gateway import reset_menu
+
+    reset_menu()
     traces = turn_ctx.reset_turn(
         username, search_fail=search_fail, keep_run=skip_scope
     )
@@ -248,6 +251,11 @@ def run_task(
         except Exception:
             pass
         names = filter_book_tools(BOOK.tool_names, shown_user, username=username)
+        from cre_rentroll.mcp_gateway import list_tools, mcp_url
+
+        if mcp_url():
+            allowed = set(list_tools())
+            names = tuple(name for name in names if name in allowed)
         skills = BOOK.skills
         if allow_predict(shown_user, username=username):
             skills = (*skills, "rr-predict")
@@ -259,15 +267,15 @@ def run_task(
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
     predict_on = cre_ask and allow_predict(shown_user, username=username)
+    if not cre_ask:
+        inventory_line = "no tools (non-CRE ask)"
+    else:
+        label = "full tool menu (book, predict)" if predict_on else "full tool menu (book)"
+        listed = ", ".join(inv.tool_names)
+        inventory_line = f"{label}: {listed}" if listed else label
     emit(
         "inventory",
-        (
-            "full tool menu (book, predict)"
-            if predict_on
-            else "full tool menu (book)"
-            if cre_ask
-            else "no tools (non-CRE ask)"
-        ),
+        inventory_line,
         inventories=[inv.name],
     )
     if inv.skills:

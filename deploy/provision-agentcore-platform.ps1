@@ -101,35 +101,6 @@ if ($memOut) {
   }
 }
 
-# --- Policy engine ---
-$pe = TryAws "create-policy-engine" @(
-  "bedrock-agentcore-control","create-policy-engine",
-  "--name","cre-deal-rentroll-policy",
-  "--description","Allow CRE MCP tools on Gateway"
-)
-if ($pe) {
-  $p = $pe | ConvertFrom-Json
-  $ids.POLICY_ENGINE_ID = $p.policyEngineId; if (-not $ids.POLICY_ENGINE_ID) { $ids.POLICY_ENGINE_ID = $p.policyEngine.policyEngineId }
-  $ids.POLICY_ENGINE_ARN = $p.policyEngineArn; if (-not $ids.POLICY_ENGINE_ARN) { $ids.POLICY_ENGINE_ARN = $p.policyEngine.policyEngineArn }
-}
-if ($ids.POLICY_ENGINE_ID) {
-  $cedar = '{"cedar":{"statement":"permit (principal, action, resource);"}}'
-  $cedarFile = Join-Path $env:TEMP "cedar.json"
-  Set-Content $cedarFile $cedar -Encoding utf8
-  $pol = TryAws "create-policy" @(
-    "bedrock-agentcore-control","create-policy",
-    "--name","allow-cre-tools",
-    "--policy-engine-id",$ids.POLICY_ENGINE_ID,
-    "--definition",$cedar,
-    "--enforcement-mode","LOG_ONLY",
-    "--validation-mode","IGNORE_ALL_FINDINGS"
-  )
-  if ($pol) {
-    $pj = $pol | ConvertFrom-Json
-    $ids.POLICY_ID = $pj.policyId; if (-not $ids.POLICY_ID) { $ids.POLICY_ID = $pj.policy.policyId }
-  }
-}
-
 # --- Code interpreter + Browser ---
 $ci = TryAws "create-code-interpreter" @(
   "bedrock-agentcore-control","create-code-interpreter",
@@ -186,9 +157,6 @@ $gwArgs = @(
   "--authorizer-type","AWS_IAM",
   "--protocol-configuration","mcp={supportedVersions=[2023-06-01],instructions=CRE rent-roll MCP tools,disableMcpListToolsPagination=true}"
 )
-if ($ids.POLICY_ENGINE_ARN) {
-  $gwArgs += @("--policy-engine-configuration","arn=$($ids.POLICY_ENGINE_ARN),mode=LOG_ONLY")
-}
 $gw = TryAws "create-gateway" $gwArgs
 if ($gw) {
   $g = $gw | ConvertFrom-Json

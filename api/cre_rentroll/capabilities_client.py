@@ -1,7 +1,7 @@
-"""Deal app client for the capabilities gateway.
+"""Deal app client for the one AgentCore MCP.
 
-Capability tools POST {CAPABILITIES_GATEWAY_URL}/mcp/deal. There is no
-in-process vault, geocode, search, vacancy, or prediction fallback.
+Capability tools POST {MCP_URL} as the deal identity. Skills stay on
+{CAPABILITIES_GATEWAY_URL}/skills. There is no in-process vault fallback.
 """
 
 from __future__ import annotations
@@ -41,8 +41,9 @@ def gateway_base() -> str:
 
 
 def deal_mcp_url() -> str:
-    base = gateway_base()
-    return f"{base}/mcp/deal" if base else ""
+    from cre_rentroll.mcp_gateway import mcp_url
+
+    return mcp_url()
 
 
 def apply_gateway_menu(names: tuple[str, ...]) -> tuple[str, ...]:
@@ -133,35 +134,14 @@ def _post_rpc(
 
 
 def call_deal_tool(name: str, arguments: dict[str, Any], timeout: float = 180.0) -> str:
-    """POST {CAPABILITIES_GATEWAY_URL}/mcp/deal tools/call. Does not follow redirects."""
-    url = deal_mcp_url()
-    if not url:
+    """POST the one MCP tools/call as the deal identity. Does not follow redirects."""
+    from cre_rentroll.mcp_gateway import call_tool, mcp_url
+
+    if not mcp_url():
         raise RuntimeError(GATEWAY_REQUIRED)
-    headers = dict(_MCP_HEADERS)
     clean = {key: value for key, value in arguments.items() if value is not None}
-    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-        _, headers = _post_rpc(
-            client,
-            url,
-            headers,
-            "initialize",
-            {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": {"name": "cre-deal-rentroll", "version": "0.1.0"},
-            },
-            req_id=1,
-        )
-        _post_rpc(client, url, headers, "notifications/initialized", req_id=None)
-        result, _ = _post_rpc(
-            client,
-            url,
-            headers,
-            "tools/call",
-            {"name": name, "arguments": clean},
-            req_id=2,
-        )
-    return _tool_text(result)
+    clean["route"] = "deal"
+    return call_tool(name, clean, timeout=timeout)
 
 
 def fetch_skills(names: tuple[str, ...]) -> str:

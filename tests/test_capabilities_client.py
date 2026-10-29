@@ -24,6 +24,8 @@ from cre_rentroll.turn_ctx import reset_turn
 
 def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     names = filter_book_tools(BOOK.tool_names, "how many units")
     assert "ask_vacancy_agent" in names
     assert "ask_prediction_agent" not in names
@@ -35,7 +37,7 @@ def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
 
 
 def test_menu_keeps_the_same_names_when_gateway_is_set(monkeypatch):
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     names = filter_book_tools(BOOK.tool_names, "how many units")
     assert "ask_vacancy_agent" in names
     assert "ask_vacancy" not in names
@@ -43,11 +45,13 @@ def test_menu_keeps_the_same_names_when_gateway_is_set(monkeypatch):
     assert "score_gcr" in names
     assert "parse_rent_roll_file" not in names
     assert "fit_vacancy" not in names
-    assert deal_mcp_url() == "http://127.0.0.1:8010/mcp/deal"
+    assert deal_mcp_url() == "https://example.test/mcp"
     assert apply_gateway_menu(BOOK.tool_names) == BOOK.tool_names
 
 
 def test_create_plan_requires_gateway_when_unset(monkeypatch):
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
 
     def boom(*_args, **_kwargs):
@@ -61,6 +65,8 @@ def test_create_plan_requires_gateway_when_unset(monkeypatch):
 
 
 def test_query_units_requires_gateway_when_unset(monkeypatch):
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
 
     def boom(*_args, **_kwargs):
@@ -75,7 +81,7 @@ def test_query_units_requires_gateway_when_unset(monkeypatch):
 
 
 def test_query_units_posts_deal_tool_when_set(monkeypatch):
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     seen: dict = {}
 
     def fake(name, arguments, timeout=180.0):
@@ -92,7 +98,7 @@ def test_query_units_posts_deal_tool_when_set(monkeypatch):
 
 
 def test_floor_and_prediction_tools_post_their_names(monkeypatch):
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     seen: list[str] = []
 
     def fake(name, arguments, timeout=180.0):
@@ -205,41 +211,19 @@ class _RpcResponse:
         return self._payload
 
 
-def test_call_deal_tool_posts_mcp_deal(monkeypatch):
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
-    urls: list[str] = []
-    names: list[str] = []
+def test_call_deal_tool_posts_the_one_mcp(monkeypatch):
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
+    seen: dict = {}
 
-    class Client:
-        def __init__(self, *args, **kwargs):
-            pass
+    def fake(name, arguments, timeout=180.0):
+        seen["name"] = name
+        seen["arguments"] = arguments
+        seen["timeout"] = timeout
+        return "{\"ok\": true}"
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def post(self, url, **kwargs):
-            urls.append(url)
-            body = kwargs.get("json") or {}
-            method = body.get("method")
-            if method == "initialize":
-                return _RpcResponse({"jsonrpc": "2.0", "id": 1, "result": {}})
-            if method == "notifications/initialized":
-                return _RpcResponse({})
-            names.append(body["params"]["name"])
-            return _RpcResponse(
-                {
-                    "jsonrpc": "2.0",
-                    "id": 2,
-                    "result": {"content": [{"type": "text", "text": "{\"ok\": true}"}]},
-                }
-            )
-
-    monkeypatch.setattr(httpx, "Client", Client)
+    monkeypatch.setattr("cre_rentroll.mcp_gateway.call_tool", fake)
     text = call_deal_tool("query_units", {"username": "ada"})
     assert text == "{\"ok\": true}"
-    assert urls
-    assert all(url == "http://127.0.0.1:8010/mcp/deal" for url in urls)
-    assert names == ["query_units"]
+    assert seen["name"] == "query_units"
+    assert seen["arguments"]["route"] == "deal"
+    assert seen["arguments"]["username"] == "ada"

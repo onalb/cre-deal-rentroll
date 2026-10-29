@@ -88,56 +88,6 @@ def main() -> int:
         )
         print(f"  {role}/{pname} exit={code} {msg[:120]}")
 
-    print("=== policy engine ===")
-    code, data, msg = aws_json(
-        [
-            "bedrock-agentcore-control",
-            "create-policy-engine",
-            "--name",
-            "cre_deal_rentroll_policy",
-            "--description",
-            "Allow CRE MCP tools on Gateway",
-        ]
-    )
-    print("  create-policy-engine", code, msg[:250])
-    if data:
-        pe = data.get("policyEngine") or data
-        ids["POLICY_ENGINE_ID"] = pe.get("policyEngineId") or data.get("policyEngineId")
-        ids["POLICY_ENGINE_ARN"] = pe.get("policyEngineArn") or data.get("policyEngineArn")
-    if not ids.get("POLICY_ENGINE_ID"):
-        code, listed, msg = aws_json(["bedrock-agentcore-control", "list-policy-engines"])
-        print("  list-policy-engines", code, msg[:200])
-        for item in (listed or {}).get("policyEngines") or []:
-            name = item.get("name") or ""
-            if "cre_deal" in name or "cre_deal" in (item.get("policyEngineId") or ""):
-                ids["POLICY_ENGINE_ID"] = item.get("policyEngineId")
-                ids["POLICY_ENGINE_ARN"] = item.get("policyEngineArn") or item.get("arn")
-
-    if ids.get("POLICY_ENGINE_ID"):
-        cedar = {"cedar": {"statement": "permit (principal, action, resource);"}}
-        cedar_path = Path(tempfile.gettempdir()) / "cre-cedar.json"
-        cedar_path.write_text(json.dumps(cedar), encoding="utf-8")
-        code, data, msg = aws_json(
-            [
-                "bedrock-agentcore-control",
-                "create-policy",
-                "--name",
-                "allow_cre_tools",
-                "--policy-engine-id",
-                ids["POLICY_ENGINE_ID"],
-                "--definition",
-                f"file://{cedar_path}",
-                "--enforcement-mode",
-                "LOG_ONLY",
-                "--validation-mode",
-                "IGNORE_ALL_FINDINGS",
-            ]
-        )
-        print("  create-policy", code, msg[:300])
-        if data:
-            pol = data.get("policy") or data
-            ids["POLICY_ID"] = pol.get("policyId") or data.get("policyId")
-
     print("=== payment manager ===")
     code, data, msg = aws_json(
         [
@@ -325,8 +275,6 @@ def main() -> int:
         "--protocol-configuration",
         f"file://{proto_path}",
     ]
-    if ids.get("POLICY_ENGINE_ARN"):
-        gw_args += ["--policy-engine-configuration", f"arn={ids['POLICY_ENGINE_ARN']},mode=LOG_ONLY"]
     code, data, msg = aws_json(gw_args)
     print("  create-gateway", code, msg[:400])
     if data:

@@ -142,14 +142,9 @@ def main() -> int:
         "--protocol-configuration",
         f"file://{proto_path}",
     ]
-    if ids.get("POLICY_ENGINE_ARN"):
-        gw_args += ["--policy-engine-configuration", f"arn={ids['POLICY_ENGINE_ARN']},mode=LOG_ONLY"]
     code, data, msg = aws_json(gw_args)
     print("  create-gateway", code, msg[:500])
     if code != 0:
-        # retry without policy engine attach
-        gw_args = [a for a in gw_args if not str(a).startswith("arn=") and a != "--policy-engine-configuration"]
-        # rebuild without policy
         gw_args = [
             "bedrock-agentcore-control",
             "create-gateway",
@@ -207,36 +202,6 @@ def main() -> int:
             ]
         )
         print("  create-gateway-target", code, msg[:500])
-
-    print("=== cedar policy ===")
-    if ids.get("POLICY_ENGINE_ID"):
-        resource = ids.get("GATEWAY_ARN") or "*"
-        if resource.startswith("arn:"):
-            stmt = f'permit(principal, action, resource == AgentCore::Gateway::"{resource}");'
-        else:
-            stmt = "permit(principal, action, resource is AgentCore::Gateway);"
-        cedar_path = Path(tempfile.gettempdir()) / "cre-cedar.json"
-        cedar_path.write_text(json.dumps({"cedar": {"statement": stmt}}), encoding="utf-8")
-        code, data, msg = aws_json(
-            [
-                "bedrock-agentcore-control",
-                "create-policy",
-                "--name",
-                "allow_cre_tools",
-                "--policy-engine-id",
-                ids["POLICY_ENGINE_ID"],
-                "--definition",
-                f"file://{cedar_path}",
-                "--enforcement-mode",
-                "LOG_ONLY",
-                "--validation-mode",
-                "IGNORE_ALL_FINDINGS",
-            ]
-        )
-        print("  create-policy", code, msg[:500])
-        if data:
-            pol = data.get("policy") or data
-            ids["POLICY_ID"] = pol.get("policyId") or data.get("policyId")
 
     print("=== payment manager ===")
     time.sleep(3)

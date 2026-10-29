@@ -495,20 +495,33 @@ def _mcp_headers() -> dict[str, str]:
     return headers
 
 
+def _caller_credentials():
+    """Sign gateway health checks as the deal identity role."""
+    try:
+        from botocore.credentials import Credentials
+        from cre_rentroll.mcp_gateway import _credentials
+
+        raw = _credentials()
+        return Credentials(raw["AccessKeyId"], raw["SecretAccessKey"], raw["SessionToken"])
+    except Exception:
+        import boto3
+
+        session = boto3.Session(region_name=_env("AWS_REGION") or REGION)
+        creds = session.get_credentials()
+        if creds is None:
+            raise RuntimeError("no AWS credentials for Gateway")
+        return creds.get_frozen_credentials()
+
+
 def _sign_and_post(url: str, body: dict[str, Any]) -> dict[str, Any]:
-    import boto3
     from botocore.auth import SigV4Auth
     from botocore.awsrequest import AWSRequest
 
-    session = boto3.Session(region_name=_env("AWS_REGION") or REGION)
-    creds = session.get_credentials()
-    if creds is None:
-        raise RuntimeError("no AWS credentials for Gateway")
+    creds = _caller_credentials()
     data = json.dumps(body).encode("utf-8")
     headers = _mcp_headers()
     request = AWSRequest(method="POST", url=url, data=data, headers=headers)
-    frozen = creds.get_frozen_credentials()
-    SigV4Auth(frozen, "bedrock-agentcore", session.region_name or REGION).add_auth(request)
+    SigV4Auth(creds, "bedrock-agentcore", _env("AWS_REGION") or REGION).add_auth(request)
     prepared = request.prepare()
     import httpx
 
@@ -757,7 +770,8 @@ def _policy_status() -> dict[str, Any] | None:
             policy = client.get_policy(policyId=pid)
     est = engine.get("status") or engine.get("name") or eid
     pst = (policy or {}).get("status") or pid or "unset"
-    _emit_box("policy", "ok", f"GetPolicyEngine {eid} status={est} policy={pst} mode=LOG_ONLY")
+    mode = str((engine.get("policyEngineConfiguration") or {}).get("mode") or "ENFORCE")
+    _emit_box("policy", "ok", f"GetPolicyEngine {eid} status={est} policy={pst} mode={mode}")
     return {
         "engine": est,
         "policy": pst,

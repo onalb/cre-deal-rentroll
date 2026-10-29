@@ -9,7 +9,8 @@ from cre_rentroll.turn_ctx import reset_turn
 
 
 def test_ask_vacancy_agent_requires_gateway_when_unset(monkeypatch):
-    monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     reset_turn("ada")
     body = json.loads(ask_vacancy_agent("1x1 Reno"))
     assert body["ok"] is False
@@ -18,7 +19,7 @@ def test_ask_vacancy_agent_requires_gateway_when_unset(monkeypatch):
 
 
 def test_ask_vacancy_agent_posts_floor_plan(monkeypatch):
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     seen: dict = {}
 
     def fake(name, arguments, timeout=180.0):

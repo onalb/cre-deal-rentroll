@@ -21,10 +21,13 @@ def test_prediction_tool_is_on_the_book_menu():
     source = inspect.getsource(ask_prediction_agent)
     assert "RR_PREDICT_URL" not in source
     assert "def forecast" not in source
-    assert "/mcp/deal" in source
+    assert "/mcp/deal" not in source
+    assert "call_deal_tool" in inspect.getsource(__import__("cre_rentroll.tools", fromlist=["tools"]))
 
 
 def test_ask_prediction_agent_requires_gateway_when_unset(monkeypatch):
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
     reset_turn("tester")
 
@@ -38,7 +41,7 @@ def test_ask_prediction_agent_requires_gateway_when_unset(monkeypatch):
 
 
 def test_ask_prediction_agent_forwards_model_arguments(monkeypatch):
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     reset_turn("tester")
     seen: dict = {}
 
@@ -85,6 +88,11 @@ def _stub_book_run(monkeypatch, roll: CanonicalRentRoll) -> None:
     monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
+    monkeypatch.setattr(
+        "cre_rentroll.mcp_gateway.list_tools",
+        lambda timeout=30.0: ["ask_prediction_agent", "query_units", "create_plan"],
+    )
     monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
@@ -112,7 +120,7 @@ def _gateway_answers(replies: list[str]):
 
 def test_untrained_gateway_reply_is_the_book_answer(monkeypatch):
     reset_predict_state()
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     roll = _predict_roll()
     _stub_book_run(monkeypatch, roll)
     clarification = "That building is not trained. Trained properties: Alpha Court, Beta Place."
@@ -140,7 +148,7 @@ def test_untrained_gateway_reply_is_the_book_answer(monkeypatch):
 
 def test_followup_forwards_the_user_text(monkeypatch):
     reset_predict_state()
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     roll = _predict_roll()
     _stub_book_run(monkeypatch, roll)
     fake, seen = _gateway_answers(
@@ -177,7 +185,7 @@ def test_followup_forwards_the_user_text(monkeypatch):
 def test_same_turn_second_ask_does_not_post(monkeypatch):
     reset_predict_state()
     reset_turn("tester")
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     calls = {"n": 0}
 
     def fake(name, arguments, timeout=180.0):

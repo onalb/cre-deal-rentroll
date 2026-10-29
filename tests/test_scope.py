@@ -163,7 +163,11 @@ def test_run_task_greeting_agent_oos(monkeypatch):
 def test_run_task_need_file_vault_gate_no_extra_llm(monkeypatch):
     _stub_vault(monkeypatch)
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
-    monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
+    monkeypatch.setattr(
+        "cre_rentroll.mcp_gateway.list_tools",
+        lambda timeout=30.0: ["query_units", "create_plan"],
+    )
     from cre_rentroll.scope import NEED_FILE_TEXT
     from cre_rentroll.tools import query_units
 

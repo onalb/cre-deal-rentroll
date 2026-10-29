@@ -1,4 +1,4 @@
-"""Attach Policy to Gateway and update AgentCore Runtime env (no secrets printed)."""
+"""Update AgentCore Runtime env (no secrets printed)."""
 from __future__ import annotations
 
 import json
@@ -82,21 +82,6 @@ def main() -> int:
     )
     print("log-resource-policy", code, msg[:300] if code else "ok")
 
-    print("=== update-gateway policy engine ===")
-    code, data, msg = aws_json(
-        [
-            "bedrock-agentcore-control",
-            "update-gateway",
-            "--gateway-identifier",
-            ids["GATEWAY_ID"],
-            "--role-arn",
-            f"arn:aws:iam::{ACCOUNT}:role/CreDealRentrollGateway",
-            "--policy-engine-configuration",
-            f"arn={ids['POLICY_ENGINE_ARN']},mode=LOG_ONLY",
-        ]
-    )
-    print("update-gateway", code, msg[:500])
-
     print("=== get runtime (redacted) ===")
     code, rt, msg = aws_json(
         ["bedrock-agentcore-control", "get-agent-runtime", "--agent-runtime-id", "cre_deal_rentroll-Nh63z6GXmK"]
@@ -111,12 +96,12 @@ def main() -> int:
         "AGENTCORE_IDENTITY_NAME": ids.get("IDENTITY_NAME") or "cre_deal_rentroll_wli",
         "AGENTCORE_MEMORY_ID": ids["MEMORY_ID"],
         "AGENTCORE_GATEWAY_URL": ids["GATEWAY_URL"],
+        "MCP_URL": ids["GATEWAY_URL"],
+        "MCP_CALLER_ROLE_ARN": f"arn:aws:iam::{ACCOUNT}:role/CreDealRentrollWli",
         "AGENTCORE_GATEWAY_ID": ids["GATEWAY_ID"],
         "AGENTCORE_HARNESS_ID": ids["HARNESS_ID"],
         "AGENTCORE_EVALUATOR_ID": ids["EVALUATOR_ID"],
         "AGENTCORE_ONLINE_EVAL_ID": ids["ONLINE_EVAL_ID"],
-        "AGENTCORE_POLICY_ENGINE_ID": ids["POLICY_ENGINE_ID"],
-        "AGENTCORE_POLICY_ID": ids["POLICY_ID"],
         "AGENTCORE_CODE_INTERPRETER_ID": ids["CODE_INTERPRETER_ID"],
         "AGENTCORE_BROWSER_ID": ids["BROWSER_ID"],
         "AGENT_OBSERVABILITY_ENABLED": "true",
@@ -127,6 +112,10 @@ def main() -> int:
     env.pop("CRE_SKILLS_DIR", None)
     env.pop("AGENTCORE_PAYMENT_MANAGER_ARN", None)
     env.pop("AGENTCORE_PAYMENT_MANAGER_ID", None)
+    if ids.get("POLICY_ENGINE_ID"):
+        env["AGENTCORE_POLICY_ENGINE_ID"] = ids["POLICY_ENGINE_ID"]
+    if ids.get("POLICY_ID"):
+        env["AGENTCORE_POLICY_ID"] = ids["POLICY_ID"]
     if ids.get("REGISTRY_ID"):
         env["AGENTCORE_REGISTRY_ID"] = ids["REGISTRY_ID"]
 
