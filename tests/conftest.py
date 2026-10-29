@@ -26,6 +26,10 @@ def _mock_scope_agent_token(monkeypatch):
     """
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
     monkeypatch.setenv("CAPABILITIES_GATEWAY_URL", "http://127.0.0.1:8010")
+    # Tests that exercise the MCP set MCP_URL themselves. Keep ambient
+    # shell env from leaking a live gateway into the rest of the suite.
+    monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     monkeypatch.delenv("SCORE_GCR_LAMBDA_ARN", raising=False)
     monkeypatch.setattr(
         "cre_rentroll.scope._scope_agent_token",
