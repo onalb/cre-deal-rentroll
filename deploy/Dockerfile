@@ -19,6 +19,7 @@ COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY api/cre_rentroll /app/cre_rentroll
+COPY gold_eval /app/gold_eval
 COPY --from=uibuild /ui/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 RUN rm -f /etc/nginx/sites-enabled/default
