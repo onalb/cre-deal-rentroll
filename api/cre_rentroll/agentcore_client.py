@@ -143,7 +143,7 @@ def invoke_run_task(
     message: str,
     *,
     has_attachment: bool = False,
-    chip_id: str = "",
+    ack_prefix: str = "",
 ) -> ChatOutcome:
     arn = runtime_arn()
     client = boto3.client(
@@ -156,7 +156,7 @@ def invoke_run_task(
             "username": username,
             "prompt": message,
             "has_attachment": has_attachment,
-            "chip_id": chip_id,
+            "ack_prefix": ack_prefix,
         }
     ).encode()
     try:

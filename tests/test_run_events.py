@@ -813,7 +813,7 @@ def test_ingest_only_chat_does_not_fill_sse_logs(monkeypatch):
 
     seen = []
 
-    def fake_ingest(user, filename, raw):
+    def fake_ingest(user, filename, raw, persist=True):
         emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
         emit("agentcore_memory", "wrote conversational STM")
         return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
@@ -825,7 +825,7 @@ def test_ingest_only_chat_does_not_fill_sse_logs(monkeypatch):
     )
     token = bind(seen.append)
     try:
-        _run_chat_sync("tester", "", False, True, "roll.csv", b"abc")
+        _run_chat_sync("tester", "", True, "roll.csv", b"abc")
     finally:
         reset(token)
     assert seen == []
@@ -837,11 +837,11 @@ def test_question_submit_still_streams_ingest_then_react(monkeypatch):
 
     seen = []
 
-    def fake_ingest(user, filename, raw):
+    def fake_ingest(user, filename, raw, persist=True):
         emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
         return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
 
-    def fake_task(user, text, has_attachment=False, chip_id=""):
+    def fake_task(user, text, has_attachment=False, ack_prefix=""):
         emit("inventory", "full tool menu (book)")
         emit("react", "ReAct turn 1")
         return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")
@@ -854,10 +854,97 @@ def test_question_submit_still_streams_ingest_then_react(monkeypatch):
     )
     token = bind(seen.append)
     try:
-        _run_chat_sync("tester", "What's occupancy?", False, True, "roll.csv", b"abc")
+        _run_chat_sync("tester", "What's occupancy?", True, "roll.csv", b"abc")
     finally:
         reset(token)
     assert [row["step"] for row in seen] == ["ingest", "inventory", "react"]
+
+
+def test_file_plus_question_persists_one_exchange(monkeypatch):
+    """One submit with file + question = ONE user turn and ONE assistant turn.
+
+    The ingest ack ("Saved … — N units. Tenant names were removed.") rides on
+    top of the answer instead of forming its own Q/A pair in history.
+    """
+    from cre_rentroll.tools import score_gcr
+
+    ack = "Saved Chambers Hill — 164 units. Tenant names were removed."
+    answer = (
+        "I'm currently unable to provide an occupancy prediction due to an "
+        "internal error with the forecasting tool."
+    )
+    saved: dict = {}
+
+    def fake_save(username, messages, **_k):
+        saved["messages"] = list(messages)
+
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+
+    def fake_agent(*_a, **_k):
+        score_gcr(answer)
+        return answer
+
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", fake_save)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            G=5, request_C=5, R=5, vault_calc_ok=True, judge="llm"
+        ),
+    )
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+
+    outcome = run_task(
+        "tester",
+        "What occupancy do you predict?",
+        skip_scope=True,
+        ack_prefix=ack,
+    )
+
+    assert outcome.kind == "answer"
+    msgs = saved["messages"]
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    assert msgs[0]["content"] == "What occupancy do you predict?"
+    assert msgs[1]["content"].startswith(ack + "\n\n")
+    assert answer in msgs[1]["content"]
+
+
+def test_ingest_persist_false_leaves_history_alone(monkeypatch):
+    """ingest_attachment(persist=False) still vaults the roll but writes no chat pair."""
+    from cre_rentroll.ingest import ingest_bytes
+    from cre_rentroll.harness import ingest_attachment
+
+    roll = CanonicalRentRoll(
+        layout="one_row",
+        property_name="Chambers Hill",
+        units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
+    )
+    saved: dict = {}
+
+    monkeypatch.setattr("cre_rentroll.harness.ingest_bytes", lambda filename, raw: roll)
+    monkeypatch.setattr("cre_rentroll.harness.generate_from_roll", lambda u, r: None)
+    monkeypatch.setattr("cre_rentroll.vault.save_roll", lambda u, r: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+
+    def fake_save(username, messages, **_k):
+        saved["messages"] = list(messages)
+
+    monkeypatch.setattr("cre_rentroll.vault.save_session", fake_save)
+    token = bind(lambda ev: None)
+    try:
+        outcome = ingest_attachment("tester", "roll.csv", b"abc", persist=False)
+    finally:
+        reset(token)
+
+    assert outcome.kind == "ingest_ack"
+    assert outcome.text.startswith("Saved Chambers Hill")
+    assert "messages" not in saved
 
 
 def test_keep_run_preserves_llm_call_counts():

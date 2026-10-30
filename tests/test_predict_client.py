@@ -138,7 +138,6 @@ def test_untrained_gateway_reply_is_the_book_answer(monkeypatch):
             "tester",
             "What occupancy do you predict?",
             skip_scope=True,
-            chip_id="predict_occupancy_only",
         )
     finally:
         reset(token)
@@ -168,7 +167,6 @@ def test_rate_limit_after_predictor_quotes_vacancy_text(monkeypatch):
             "tester",
             "What's the predicted vacancy for Bay View Gardens Apartments?",
             skip_scope=True,
-            chip_id="predict_occupancy_only",
         )
     finally:
         reset(token)
@@ -196,7 +194,7 @@ def test_followup_forwards_the_user_text(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", first_agent)
     token = bind(lambda *_a, **_k: None)
     try:
-        first = run_task("tester", "What occupancy do you predict?", skip_scope=True, chip_id="predict")
+        first = run_task("tester", "What occupancy do you predict?", skip_scope=True)
         assert "Which floor plan" in (first.text or "")
 
         def follow_agent(*_a, **_k):
@@ -204,7 +202,7 @@ def test_followup_forwards_the_user_text(monkeypatch):
             return payload["answer"]
 
         monkeypatch.setattr("cre_rentroll.harness.run_agent", follow_agent)
-        second = run_task("tester", "Plan A", skip_scope=True, chip_id="predict")
+        second = run_task("tester", "Plan A", skip_scope=True)
     finally:
         reset(token)
     assert seen[1]["arguments"]["question"] == "Plan A"

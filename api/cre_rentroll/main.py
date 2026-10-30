@@ -141,22 +141,32 @@ def _run_chat_sync(
     attached: bool,
     filename: str | None,
     raw: bytes | None,
-    chip_id: str = "",
 ) -> dict[str, Any]:
     outcomes: list[dict[str, Any]] = []
+    ack = ""
     if filename and raw is not None:
         if len(raw) > 8_000_000:
             raise HTTPException(413, "file too large")
         # File-only ingest still prints RUN to CloudWatch; compact UI waits for a question Submit.
+        # When a question rides along, skip the standalone ingest exchange —
+        # its ack is merged into run_task's single answer message so the UI
+        # shows one question and one answer.
         if text:
-            outcomes.append(harness.ingest_attachment(user, filename, raw).model_dump())
+            ingest_outcome = harness.ingest_attachment(
+                user, filename, raw, persist=False
+            )
+            ack = (ingest_outcome.text or "").strip()
+            outcomes.append(ingest_outcome.model_dump())
         else:
             with run_events.cloudwatch_only():
-                outcomes.append(harness.ingest_attachment(user, filename, raw).model_dump())
+                ingest_outcome = harness.ingest_attachment(
+                    user, filename, raw, persist=True
+                )
+                outcomes.append(ingest_outcome.model_dump())
     if text:
         outcomes.append(
             harness.run_task(
-                user, text, has_attachment=attached, chip_id=chip_id
+                user, text, has_attachment=attached, ack_prefix=ack
             ).model_dump()
         )
     if not outcomes:
@@ -172,7 +182,6 @@ def _sse_pack(event: str, data: dict[str, Any]) -> bytes:
 async def chat(
     request: Request,
     message: str = Form(default=""),
-    chip_id: str = Form(default=""),
     file: UploadFile | None = File(default=None),
     x_username: str | None = Header(default=None),
 ):
@@ -198,7 +207,7 @@ async def chat(
     if not want_sse:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, attached, filename, raw, chip_id)
+            last = _run_chat_sync(user, text, attached, filename, raw)
         finally:
             run_events.reset(token)
         last["logs"] = collected
@@ -211,7 +220,7 @@ async def chat(
     def work() -> None:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, attached, filename, raw, chip_id)
+            last = _run_chat_sync(user, text, attached, filename, raw)
             last["logs"] = collected
             q.put(("done", last))
         except HTTPException as exc:

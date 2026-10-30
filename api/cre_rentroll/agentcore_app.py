@@ -28,7 +28,7 @@ class InvocationBody(BaseModel):
     prompt: str | None = None
     username: str | None = None
     has_attachment: bool = False
-    chip_id: str = ""
+    ack_prefix: str = ""
     input: dict[str, Any] | None = None
 
 
@@ -45,7 +45,7 @@ def parse_payload(body: dict[str, Any] | InvocationBody) -> dict[str, Any]:
         "username": username,
         "prompt": prompt,
         "has_attachment": bool(raw.get("has_attachment") or nested.get("has_attachment")),
-        "chip_id": str(raw.get("chip_id") or nested.get("chip_id") or ""),
+        "ack_prefix": str(raw.get("ack_prefix") or nested.get("ack_prefix") or ""),
     }
 
 
@@ -69,7 +69,7 @@ def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:
         args["username"],
         args["prompt"],
         has_attachment=args["has_attachment"],
-        chip_id=args.get("chip_id") or "",
+        ack_prefix=args.get("ack_prefix") or "",
     )
 
 

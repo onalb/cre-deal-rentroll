@@ -19,6 +19,7 @@ _llm_usage: ContextVar[list[tuple[int | None, int | None]]] = ContextVar("cre_ll
 _checklist: ContextVar[list[dict[str, str]]] = ContextVar("cre_checklist", default=[])
 _eval_scores: ContextVar[Any] = ContextVar("cre_eval_scores", default=None)
 _eval_query: ContextVar[str | None] = ContextVar("cre_eval_query", default=None)
+_ack_prefix: ContextVar[str | None] = ContextVar("cre_ack_prefix", default=None)
 
 
 def reset_turn(
@@ -36,6 +37,7 @@ def reset_turn(
     _planless.set(None)
     _eval_scores.set({"value": None})
     _eval_query.set(None)
+    _ack_prefix.set(None)
     if not keep_run:
         _run_t0.set(time.time())
         _retry_n.set(0)
@@ -236,6 +238,19 @@ def set_asked_as_of(value: str | None) -> None:
 
 def asked_as_of() -> str | None:
     return _asked_as_of.get()
+
+
+def set_ack_prefix(value: str | None) -> None:
+    """Ingest ack to merge into this turn's single assistant message.
+
+    Set when a rent-roll file and a question arrive in the same request so
+    history keeps ONE user turn and ONE assistant turn (ack + answer).
+    """
+    _ack_prefix.set(str(value).strip() if value else None)
+
+
+def ack_prefix() -> str | None:
+    return _ack_prefix.get()
 
 
 def traces() -> list[dict[str, Any]]:

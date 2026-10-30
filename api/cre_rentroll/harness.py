@@ -179,18 +179,22 @@ def measure_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def ingest_attachment(username: str, filename: str, raw: bytes) -> ChatOutcome:
+def ingest_attachment(username: str, filename: str, raw: bytes, *, persist: bool = True) -> ChatOutcome:
     roll = ingest_bytes(filename, raw)
     vault.save_roll(username, roll)
     generate_from_roll(username, roll)
     text = ack_text(roll)
-    sess = vault.load_session(username)
-    messages = list(sess.get("messages") or [])
-    messages += [
-        {"role": "user", "content": f"[attached {filename}]"},
-        {"role": "assistant", "content": text, "kind": "ingest_ack"},
-    ]
-    vault.save_session(username, messages)
+    if persist:
+        # File-only submit: the ingest pair is the whole exchange.
+        # When a question rides along, main.py passes persist=False and the
+        # ack is merged into run_task's single answer message instead.
+        sess = vault.load_session(username)
+        messages = list(sess.get("messages") or [])
+        messages += [
+            {"role": "user", "content": f"[attached {filename}]"},
+            {"role": "assistant", "content": text, "kind": "ingest_ack"},
+        ]
+        vault.save_session(username, messages)
     emit(
         "ingest",
         f"{roll.property_name or filename}, {roll.unit_count} units, parser={roll.layout}",
@@ -219,7 +223,7 @@ def run_task(
     has_attachment: bool = False,
     skip_scope: bool = False,
     persist_as: str | None = None,
-    chip_id: str = "",
+    ack_prefix: str = "",
 ) -> ChatOutcome:
     from cre_rentroll.agentcore_client import invoke_run_task, should_invoke_remote
 
@@ -228,7 +232,7 @@ def run_task(
             username,
             message,
             has_attachment=has_attachment,
-            chip_id=chip_id,
+            ack_prefix=ack_prefix,
         )
     _ = has_attachment
     run_id = str(uuid.uuid4())[:8]
@@ -238,6 +242,7 @@ def run_task(
 
     reset_menu()
     traces = turn_ctx.reset_turn(username, keep_run=skip_scope)
+    turn_ctx.set_ack_prefix(ack_prefix)
     asked = as_of_from_message(shown_user)
     turn_ctx.set_asked_as_of(asked)
     turn_ctx.set_eval_query(shown_user)
@@ -675,9 +680,15 @@ def _persist(
     *,
     agentcore_boxes: bool = True,
 ) -> None:
+    ack = (turn_ctx.ack_prefix() or "").strip()
+    answer = (outcome.text or "").strip()
+    if ack and ack not in answer:
+        # One submit with file + question → one user turn and one assistant
+        # turn: the ingest ack rides on top of the answer.
+        answer = f"{ack}\n\n{answer}" if answer else ack
     messages = messages + [
         {"role": "user", "content": user_text},
-        {"role": "assistant", "content": outcome.text[:4000], "kind": outcome.kind},
+        {"role": "assistant", "content": answer[:4000], "kind": outcome.kind},
     ]
     vault.save_session(username, messages, eval_retry_used=False)
     try:
@@ -699,7 +710,7 @@ def _persist(
             end_turn(
                 username,
                 user_text=user_text,
-                assistant_text=outcome.text or "",
+                assistant_text=answer,
                 traces=traces,
                 scores=outcome.eval.model_dump() if outcome.eval else None,
             )
