@@ -6,7 +6,10 @@
       "Principal": {
         "Federated": "arn:aws:iam::226721156429:oidc-provider/token.actions.githubusercontent.com"
       },
-      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Action": [
+        "sts:AssumeRoleWithWebIdentity",
+        "sts:TagSession"
+      ],
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
@@ -14,7 +17,9 @@
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
             "repo:onalb/cre-deal-rentroll:ref:refs/heads/main",
-            "repo:onalb/capabilities-gateway:ref:refs/heads/main"
+            "repo:onalb@113280515/cre-deal-rentroll@1424474406:ref:refs/heads/main",
+            "repo:onalb/capabilities-gateway:ref:refs/heads/main",
+            "repo:onalb@113280515/capabilities-gateway@1433747322:ref:refs/heads/main"
           ]
         }
       }
