@@ -107,6 +107,7 @@ def main() -> int:
         "AGENT_OBSERVABILITY_ENABLED": "true",
         "UNIFIED_TRACES_DESTINATION_ENABLED": "true",
         "RR_PREDICT_URL": "https://vacancy-agent.purplegrass-79f82a02.eastus.azurecontainerapps.io",
+        "CAPABILITIES_GATEWAY_URL": "https://39pjmmgrnu.us-east-1.awsapprunner.com",
     }
     env.update(extra)
     env.pop("CRE_SKILLS_DIR", None)

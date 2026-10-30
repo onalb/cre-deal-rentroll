@@ -55,7 +55,14 @@ def _sse_data(payload: dict[str, Any]) -> bytes:
 
 def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:
     from cre_rentroll.agentcore_platform import bind_workload_token, note_runtime
+    # #region agent log
+    try:
+        from cre_rentroll.capabilities_client import _agent_dbg
 
+        _agent_dbg("A", "agentcore_app.py:_run_task", "invocation env snapshot", {"has_user": bool(args.get("username"))})
+    except Exception:
+        pass
+    # #endregion
     bind_workload_token(headers)
     note_runtime()
     return harness.run_task(

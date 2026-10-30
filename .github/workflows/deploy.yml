@@ -1,48 +1,121 @@
-name: deploy-apprunner
+name: deploy
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "ui/**"
+      - "api/cre_rentroll/**"
+      - "api/requirements.txt"
+      - "gold_eval/**"
+      - "deploy/Dockerfile"
+      - "deploy/Dockerfile.agentcore"
+      - "deploy/nginx.conf"
   workflow_dispatch:
 
+concurrency:
+  group: cre-deal-rentroll-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
-  deploy:
+  changes:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      # secrets context is illegal inside step if: expressions.
-      HAS_AWS: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
-      HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
+    outputs:
+      apprunner: ${{ steps.filter.outputs.apprunner }}
+      agentcore: ${{ steps.filter.outputs.agentcore }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          apprunner=false
+          agentcore=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            apprunner=true
+            agentcore=true
+          else
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              files="$(git ls-tree -r --name-only HEAD)"
+            else
+              files="$(git diff --name-only "$before" "${{ github.sha }}")"
+            fi
+            printf '%s\n' "$files"
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              case "$f" in
+                ui/*|api/cre_rentroll/*|api/requirements.txt|gold_eval/*|deploy/Dockerfile|deploy/nginx.conf)
+                  apprunner=true
+                  ;;
+              esac
+              case "$f" in
+                api/cre_rentroll/*|api/requirements.txt|deploy/Dockerfile.agentcore)
+                  agentcore=true
+                  ;;
+              esac
+            done <<<"$files"
+          fi
+          echo "apprunner=$apprunner" >> "$GITHUB_OUTPUT"
+          echo "agentcore=$agentcore" >> "$GITHUB_OUTPUT"
+
+  apprunner:
+    needs: changes
+    if: needs.changes.outputs.apprunner == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        if: env.HAS_AWS == 'true'
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-to-assume: arn:aws:iam::226721156429:role/GitHubActionsDeploy
+          aws-region: us-east-1
+          role-session-name: gha-rentroll-apprunner
       - uses: aws-actions/amazon-ecr-login@v2
-        if: env.HAS_AWS == 'true'
-        id: ecr
       - name: Build and push
-        if: env.HAS_AWS == 'true'
         env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          ECR_REPOSITORY: cre-deal-rentroll
+          IMAGE: 226721156429.dkr.ecr.us-east-1.amazonaws.com/cre-deal-rentroll:${{ github.sha }}
         run: |
-          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 \
-            || aws ecr create-repository --repository-name "$ECR_REPOSITORY"
-          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA::12}"
-          docker build -f deploy/Dockerfile -t "$IMAGE" -t "$ECR_REGISTRY/$ECR_REPOSITORY:latest" .
+          set -euo pipefail
+          docker build -f deploy/Dockerfile -t "$IMAGE" .
           docker push "$IMAGE"
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
-      - name: Create or update CloudFormation
-        if: env.HAS_AWS == 'true' && env.HAS_OPENAI == 'true'
+      - name: Roll App Runner
+        run: bash deploy/ci_roll_image.sh "arn:aws:apprunner:us-east-1:226721156429:service/cre-deal-rentroll/e02e2828860543edbb0e3a23f6d92ebb" "$IMAGE"
+
+  agentcore:
+    needs: changes
+    if: needs.changes.outputs.agentcore == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::226721156429:role/GitHubActionsDeploy
+          aws-region: us-east-1
+          role-session-name: gha-rentroll-agentcore
+          role-duration-seconds: 7200
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push arm64 runtime
+        env:
+          IMAGE: 226721156429.dkr.ecr.us-east-1.amazonaws.com/cre-deal-rentroll-agentcore:${{ github.sha }}
+          LATEST: 226721156429.dkr.ecr.us-east-1.amazonaws.com/cre-deal-rentroll-agentcore:latest
         run: |
-          aws cloudformation deploy \
-            --stack-name cre-deal-rentroll \
-            --template-file deploy/cloudformation.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides ImageUri="$IMAGE" OpenAIApiKey="${{ secrets.OPENAI_API_KEY }}" TableName=ml_interview
-          aws cloudformation describe-stacks --stack-name cre-deal-rentroll \
-            --query "Stacks[0].Outputs" --output table
+          set -euo pipefail
+          docker buildx build --platform linux/arm64 \
+            -f deploy/Dockerfile.agentcore \
+            -t "$IMAGE" \
+            -t "$LATEST" \
+            --push .
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Roll AgentCore runtime
+        run: bash deploy/ci_update_runtime.sh "$IMAGE"

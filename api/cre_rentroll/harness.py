@@ -415,6 +415,19 @@ def run_task(
                 return outcome
             note = reflect.on_tool_error("agent", str(exc))
             emit("error", note)
+            # #region agent log
+            try:
+                from cre_rentroll.capabilities_client import _agent_dbg
+
+                _agent_dbg(
+                    "C",
+                    "harness.py:_invoke_react_except",
+                    "run_agent raised",
+                    {"exc_type": type(exc).__name__, "exc": str(exc)[:200]},
+                )
+            except Exception:
+                pass
+            # #endregion
             if "replan" in note.lower():
                 emit("replan", note)
             draft = f"{note}\n{exc}"

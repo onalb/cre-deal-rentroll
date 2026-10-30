@@ -39,6 +39,65 @@ def gateway_base() -> str:
     return os.environ.get("CAPABILITIES_GATEWAY_URL", "").strip().rstrip("/")
 
 
+def _agent_dbg(hid: str, loc: str, msg: str, extra: dict[str, Any] | None = None) -> None:
+    # #region agent log
+    raw = os.environ.get("CAPABILITIES_GATEWAY_URL")
+    mcp = os.environ.get("MCP_URL") or os.environ.get("AGENTCORE_GATEWAY_URL")
+    data: dict[str, Any] = {
+        "gw_is_none": raw is None,
+        "gw_len": len((raw or "").strip()),
+        "gw_prefix": (raw or "").strip()[:24],
+        "mcp_len": len((mcp or "").strip()),
+        "inside": os.environ.get("AGENTCORE_INSIDE", ""),
+        "n_environ": len(os.environ),
+        "keys": sorted(
+            k
+            for k in os.environ
+            if any(s in k.upper() for s in ("CAPABILIT", "MCP_URL", "GATEWAY", "AGENTCORE_INSIDE"))
+        ),
+    }
+    if extra:
+        data.update(extra)
+    payload = {
+        "sessionId": "3cdd74",
+        "runId": "pre-fix",
+        "hypothesisId": hid,
+        "location": loc,
+        "message": msg,
+        "data": data,
+        "timestamp": int(__import__("time").time() * 1000),
+    }
+    line = json.dumps(payload, default=str)
+    for path in (
+        r"C:\Users\burak\cre-deal-rentroll\debug-3cdd74.log",
+        "/app/debug-3cdd74.log",
+        "debug-3cdd74.log",
+    ):
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            break
+        except Exception:
+            continue
+    try:
+        from cre_rentroll.run_events import emit
+
+        emit("debug", f"{hid} {msg} gw_len={data['gw_len']} mcp_len={data['mcp_len']} inside={data['inside']!r} keys={data['keys']}")
+    except Exception:
+        pass
+    headers = {"Content-Type": "application/json", "X-Debug-Session-Id": "3cdd74"}
+    for url in (
+        "http://127.0.0.1:7663/ingest/ef167736-0a3f-4c8a-b991-a07eb353bc2f",
+        "http://host.docker.internal:7663/ingest/ef167736-0a3f-4c8a-b991-a07eb353bc2f",
+    ):
+        try:
+            httpx.post(url, json=payload, headers=headers, timeout=0.4)
+            break
+        except Exception:
+            continue
+    # #endregion
+
+
 def deal_mcp_url() -> str:
     from cre_rentroll.mcp_gateway import mcp_url
 
@@ -137,6 +196,7 @@ def call_deal_tool(name: str, arguments: dict[str, Any], timeout: float = 180.0)
     from cre_rentroll.mcp_gateway import call_tool, mcp_url
 
     if not mcp_url():
+        _agent_dbg("D", "capabilities_client.py:call_deal_tool", "mcp_url empty", {"tool": name})
         raise RuntimeError(GATEWAY_REQUIRED)
     clean = {key: value for key, value in arguments.items() if value is not None}
     clean["route"] = "deal"
@@ -151,7 +211,9 @@ def fetch_skills(names: tuple[str, ...]) -> str:
     if not names:
         return ""
     base = gateway_base()
+    _agent_dbg("A", "capabilities_client.py:fetch_skills", "fetch_skills base", {"n_names": len(names), "has_base": bool(base)})
     if not base:
+        _agent_dbg("B", "capabilities_client.py:fetch_skills", "GATEWAY_REQUIRED empty base", {})
         raise RuntimeError(GATEWAY_REQUIRED)
     chunks: list[str] = []
     for name in names:
