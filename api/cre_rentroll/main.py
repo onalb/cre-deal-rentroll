@@ -138,7 +138,6 @@ def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, A
 def _run_chat_sync(
     user: str,
     text: str,
-    fail: bool,
     attached: bool,
     filename: str | None,
     raw: bytes | None,
@@ -157,7 +156,7 @@ def _run_chat_sync(
     if text:
         outcomes.append(
             harness.run_task(
-                user, text, search_fail=fail, has_attachment=attached, chip_id=chip_id
+                user, text, has_attachment=attached, chip_id=chip_id
             ).model_dump()
         )
     if not outcomes:
@@ -173,7 +172,6 @@ def _sse_pack(event: str, data: dict[str, Any]) -> bytes:
 async def chat(
     request: Request,
     message: str = Form(default=""),
-    search_fail: bool = Form(default=False),
     chip_id: str = Form(default=""),
     file: UploadFile | None = File(default=None),
     x_username: str | None = Header(default=None),
@@ -187,7 +185,6 @@ async def chat(
         if len(raw) > 8_000_000:
             raise HTTPException(413, "file too large")
     text = (message or "").strip()
-    fail = bool(search_fail)
     attached = bool(filename)
     want_sse = "text/event-stream" in (request.headers.get("accept") or "")
 
@@ -201,7 +198,7 @@ async def chat(
     if not want_sse:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, fail, attached, filename, raw, chip_id)
+            last = _run_chat_sync(user, text, attached, filename, raw, chip_id)
         finally:
             run_events.reset(token)
         last["logs"] = collected
@@ -214,7 +211,7 @@ async def chat(
     def work() -> None:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, fail, attached, filename, raw, chip_id)
+            last = _run_chat_sync(user, text, attached, filename, raw, chip_id)
             last["logs"] = collected
             q.put(("done", last))
         except HTTPException as exc:

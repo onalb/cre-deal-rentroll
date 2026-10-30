@@ -57,6 +57,11 @@ def test_operator_leak_detects_plan_json_inventory():
     )
     assert is_operator_leak("inventory no tools (non-CRE ask)")
     assert is_operator_leak("[tag: in_progress] [pending]")
+    assert is_operator_leak("0\ncreate_plan:\n\n[pending: ]")
+    assert is_operator_leak("create_plan:\n\n[pending: ]")
+    stripped = strip_operator_echo("0\ncreate_plan:\n\n[pending: ]")
+    assert "create_plan" not in stripped.lower()
+    assert "[pending" not in stripped.lower()
     assert is_operator_leak("I will conduct a search to define a rent roll.")
     assert is_operator_leak(
         "I will conduct a search to define a rent roll.\n[tag: in_progress] [pending]"

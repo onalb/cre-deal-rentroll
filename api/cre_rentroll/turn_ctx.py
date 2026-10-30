@@ -6,7 +6,6 @@ from typing import Any
 
 _traces: ContextVar[list[dict[str, Any]] | None] = ContextVar("cre_traces", default=None)
 _username: ContextVar[str | None] = ContextVar("cre_username", default=None)
-_search_fail: ContextVar[bool] = ContextVar("cre_search_fail", default=False)
 _asked_as_of: ContextVar[str | None] = ContextVar("cre_asked_as_of", default=None)
 _run_t0: ContextVar[float | None] = ContextVar("cre_run_t0", default=None)
 _retry_n: ContextVar[int] = ContextVar("cre_retry_n", default=0)
@@ -14,6 +13,7 @@ _plan_skills: ContextVar[list[str]] = ContextVar("cre_plan_skills", default=[])
 _plan_inventories: ContextVar[list[str]] = ContextVar("cre_plan_inventories", default=[])
 _llm_kinds: ContextVar[list[str]] = ContextVar("cre_llm_kinds", default=[])
 _llm_plan: ContextVar[str | None] = ContextVar("cre_llm_plan", default=None)
+_planless: ContextVar[str | None] = ContextVar("cre_planless", default=None)
 _llm_calls: ContextVar[list[str]] = ContextVar("cre_llm_calls", default=[])
 _llm_usage: ContextVar[list[tuple[int | None, int | None]]] = ContextVar("cre_llm_usage", default=[])
 _checklist: ContextVar[list[dict[str, str]]] = ContextVar("cre_checklist", default=[])
@@ -24,17 +24,16 @@ _eval_query: ContextVar[str | None] = ContextVar("cre_eval_query", default=None)
 def reset_turn(
     username: str,
     *,
-    search_fail: bool = False,
     keep_run: bool = False,
 ) -> list[dict[str, Any]]:
     traces: list[dict[str, Any]] = []
     _traces.set(traces)
     _username.set(username)
-    _search_fail.set(search_fail)
     _asked_as_of.set(None)
     _llm_kinds.set([])
     _llm_plan.set(None)
     _checklist.set([])
+    _planless.set(None)
     _eval_scores.set({"value": None})
     _eval_query.set(None)
     if not keep_run:
@@ -191,6 +190,15 @@ def llm_plan() -> str | None:
     return _llm_plan.get()
 
 
+def set_planless(tool: str | None) -> None:
+    """Mark this turn planless: routed to the one named work tool."""
+    _planless.set(str(tool) if tool else None)
+
+
+def planless() -> str | None:
+    return _planless.get()
+
+
 def checklist() -> list[dict[str, str]]:
     return list(_checklist.get() or [])
 
@@ -244,10 +252,6 @@ def last_tool_name() -> str | None:
 
 def username() -> str | None:
     return _username.get()
-
-
-def search_should_fail() -> bool:
-    return _search_fail.get()
 
 
 def record(name: str, args: dict[str, Any], result: Any) -> None:

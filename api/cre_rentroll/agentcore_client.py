@@ -142,7 +142,6 @@ def invoke_run_task(
     username: str,
     message: str,
     *,
-    search_fail: bool = False,
     has_attachment: bool = False,
     chip_id: str = "",
 ) -> ChatOutcome:
@@ -156,7 +155,6 @@ def invoke_run_task(
         {
             "username": username,
             "prompt": message,
-            "search_fail": search_fail,
             "has_attachment": has_attachment,
             "chip_id": chip_id,
         }

@@ -14,7 +14,6 @@ export const DEMO_CHIPS = [
     id: "abstract",
     level: "easy",
     label: "Abstract the roll",
-    searchFail: false,
     prompt:
       "What's the unit count, occupancy, in-place monthly income, vacant count, average unit sqft, and any month-to-month on this rent roll?",
   },
@@ -22,14 +21,12 @@ export const DEMO_CHIPS = [
     id: "predict_occupancy_only",
     level: "predict-ok",
     label: "Predict occupancy",
-    searchFail: false,
     prompt: "What occupancy do you predict for {{Property Name}}",
   },
   {
     id: "multi-1",
     level: "medium",
     label: "Multi-1",
-    searchFail: false,
     prompt:
       "Where is this property? Can you put it on a map, and how many units are vacant, and what is occupancy?",
   },
@@ -37,7 +34,6 @@ export const DEMO_CHIPS = [
     id: "multi-2",
     level: "medium",
     label: "Multi-2",
-    searchFail: false,
     prompt:
       "What is in-place monthly income, and what would annualized NOI be if opex is 35% of EGI?",
   },
@@ -45,7 +41,6 @@ export const DEMO_CHIPS = [
     id: "multi-3",
     level: "medium",
     label: "Multi-3",
-    searchFail: false,
     prompt:
       "Put this property on a map, how many units are month-to-month, and what cap rate is implied at a $12M ask?",
   },
@@ -53,28 +48,24 @@ export const DEMO_CHIPS = [
     id: "locate",
     level: "medium",
     label: "Locate the property",
-    searchFail: false,
     prompt: "Where is this property? Can you put it on a map?",
   },
   {
     id: "underwrite",
     level: "medium",
     label: "Income vs ask",
-    searchFail: false,
     prompt: "What's the annualized in-place income?",
   },
   {
     id: "buy",
     level: "hard",
     label: "Should I buy?",
-    searchFail: false,
     prompt: "Should I buy this, and what is it worth?",
   },
   {
-    id: "search-down",
+    id: "cap-rates",
     level: "hard",
-    label: "Search fails",
-    searchFail: true,
+    label: "Cap-rate news",
     prompt:
       "What are recent multifamily cap rates or sales in this property's metro?",
   },
@@ -82,7 +73,6 @@ export const DEMO_CHIPS = [
     id: "predict",
     level: "predict",
     label: "Predict occupancy (full)",
-    searchFail: false,
     prompt:
       "Over the next 12 months, how many units expire or are MTM, what income is at risk, and what occupancy do you predict for {property_name}? Do not request a rent roll file.",
   },
@@ -90,7 +80,6 @@ export const DEMO_CHIPS = [
     id: "weather",
     level: "oos",
     label: "Weekend weather",
-    searchFail: false,
     prompt: "What's the weather this weekend?",
   },
 ];

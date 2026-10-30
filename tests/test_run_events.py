@@ -288,7 +288,7 @@ def test_failed_tool_emits_error_and_replan():
     assert "error" in steps
     assert "reflect" not in steps
     assert "replan" in steps
-    assert any("Replan" in (row.get("message") or "") for row in seen)
+    assert any("Continue without looping" in (row.get("message") or "") for row in seen)
     assert any("web_search (MCP)" in (row.get("message") or "") for row in seen)
 
 
@@ -755,7 +755,7 @@ def test_question_submit_still_streams_ingest_then_react(monkeypatch):
         emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
         return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
 
-    def fake_task(user, text, search_fail=False, has_attachment=False, chip_id=""):
+    def fake_task(user, text, has_attachment=False, chip_id=""):
         emit("inventory", "full tool menu (book)")
         emit("react", "ReAct turn 1")
         return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")

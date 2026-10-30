@@ -24,11 +24,6 @@
       "scope": "IRRELEVANT"
     },
     {
-      "id": "search-down",
-      "query": "Same as Q3 with web_search forced to fail",
-      "search_fail": true
-    },
-    {
       "id": "avg-sqft",
       "query": "whats the average sqft?",
       "required_tools": ["query_units"],

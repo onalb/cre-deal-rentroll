@@ -20,6 +20,16 @@ import { boldToolNameParts, logMessageParts } from "./boldToolNames.js";
   assert.deepEqual(tool, [{ bold: true, text: "query_units" }, " (MCP) → 164 units"]);
 }
 {
+  const pred = logMessageParts({
+    step: "tool",
+    message: "ask_prediction_agent (MCP) → Which floor plan?",
+  });
+  assert.deepEqual(pred, [
+    { bold: true, text: "ask_prediction_agent" },
+    " (MCP) → Which floor plan?",
+  ]);
+}
+{
   const react = logMessageParts({
     step: "react",
     message: "ReAct turn 2 — query_units for 1. [in_progress] query_units",

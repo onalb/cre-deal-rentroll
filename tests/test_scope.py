@@ -4,7 +4,7 @@ import cre_rentroll.scope as scope_mod
 from cre_rentroll.agents import BOOK
 from cre_rentroll.harness import run_task
 from cre_rentroll.run_events import bind, reset
-from cre_rentroll.scope import OOS_TEXT, classify_scope, in_scope, parse_scope_token
+from cre_rentroll.scope import NEED_FILE_TEXT, OOS_TEXT, classify_scope, in_scope, parse_scope_token
 from cre_rentroll.turn_ctx import traces
 
 _OOS_TOKENS = {
@@ -52,6 +52,7 @@ def test_classify_prompt_is_generic_property_deal_area_vs_personal_chat():
     assert "wrong country" in blob or "country or place" in blob
     assert "search the map" in blob
     assert "attached" in blob
+    assert "floor plan" in blob or "variant" in blob
     assert "flood" not in blob
     assert "population" not in blob
     assert "las vegas" not in blob
@@ -204,6 +205,28 @@ def test_run_task_need_file_vault_gate_no_extra_llm(monkeypatch):
     assert "scope," not in summary
 
 
+def test_run_task_empty_vault_this_roll_skips_react(monkeypatch):
+    _stub_vault(monkeypatch)
+    _inject_token(monkeypatch, "IN_SCOPE")
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+
+    def boom(*_a, **_k):
+        raise AssertionError("run_agent must not start when the vault is empty")
+
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", boom)
+    seen = []
+    token = bind(seen.append)
+    try:
+        out = run_task("analyst", "whats the occupancy")
+    finally:
+        reset(token)
+    assert out.kind == "warning"
+    assert out.stop_reason == "need_attachment"
+    assert out.text == NEED_FILE_TEXT
+    assert any("need rent-roll file" in (row.get("message") or "") for row in seen)
+    assert not any(row.get("step") == "react" for row in seen)
+
+
 def test_run_task_oos_keeps_llm_wording(monkeypatch):
     draft = (
         "This agent answers questions about the property, the deal, or the area it "
@@ -230,12 +253,35 @@ def test_run_task_oos_keeps_llm_wording(monkeypatch):
 
 def test_run_task_oos_strips_planner_leak_not_shown(monkeypatch):
     leak = "I will conduct a search to define a rent roll.\n[tag: in_progress] [pending]"
-    out, captured, _seen = _run_oos_task(monkeypatch, "What's the weather this weekend?", leak)
+    friendly = (
+        "I only answer questions about the property, the deal, or the area it sits in."
+    )
+    drafts = [leak, friendly]
+    _stub_vault(monkeypatch)
+    _forbid_mcp(monkeypatch)
+    _inject_token(monkeypatch, "OOS")
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+    captured: dict = {"n": 0}
+
+    def fake_agent(_prompt, inv, _facts):
+        captured["n"] += 1
+        captured["inv"] = inv
+        return drafts[min(captured["n"] - 1, len(drafts) - 1)]
+
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    seen = []
+    token = bind(seen.append)
+    try:
+        out = run_task("analyst", "What's the weather this weekend?")
+    finally:
+        reset(token)
+    assert captured["n"] == 2
     assert captured["inv"].tool_names == ()
+    assert out.text == friendly
     assert "I will conduct a search" not in out.text
     assert "[tag: in_progress]" not in out.text
-    assert "[pending]" not in out.text
-    assert "could not finish" in out.text.lower()
+    assert "create_plan" not in (out.text or "").lower()
+    assert "could not finish" not in out.text.lower()
 
 
 def test_run_task_calls_classify_scope_then_empty_inventory(monkeypatch):
@@ -259,6 +305,8 @@ def test_system_prompt_identity_chitchat_is_oos_not_interview_wording():
         assert "no create_plan" in blob
         assert "property" in blob and "deal" in blob and "area" in blob
         assert "personal chat" in blob
+        assert "own words" in blob
+        assert "fixed slogan" in blob
         assert "flood" not in blob
         assert "population" not in blob
         assert "what's your name" not in blob

@@ -198,7 +198,6 @@ export default function App() {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [searchFail, setSearchFail] = useState(false);
   const [chipId, setChipId] = useState("");
   const [runLog, setRunLog] = useState([]);
   const [compactArmed, setCompactArmed] = useState(false);
@@ -312,7 +311,6 @@ export default function App() {
         ? chip.prompt
         : fillChipPrompt(chip.prompt, session?.vault),
     );
-    setSearchFail(Boolean(chip.searchFail));
     setChipId(chip.id || "");
     setError("");
   }
@@ -323,7 +321,6 @@ export default function App() {
     if (!text.trim() && !file) return;
     const outgoing = text;
     const outgoingFile = file;
-    const failFlag = Boolean(searchFail);
     const hasQuestion = Boolean(outgoing.trim());
     const rawUser = outgoing.trim() || (outgoingFile ? `[attached ${outgoingFile.name}]` : "");
     const userContent = displayContent({ role: "user", content: rawUser });
@@ -342,7 +339,6 @@ export default function App() {
     try {
       const fd = new FormData();
       fd.append("message", outgoing);
-      fd.append("search_fail", failFlag ? "true" : "false");
       if (outgoingFile) fd.append("file", outgoingFile);
       const data = await streamChat({
         username,
@@ -481,15 +477,6 @@ export default function App() {
               ) : session?.vault ? (
                 <span className="fname hint">saved in vault — not re-sent</span>
               ) : null}
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={searchFail}
-                  disabled={busy}
-                  onChange={(e) => setSearchFail(e.target.checked)}
-                />
-                search-down
-              </label>
             </div>
           </div>
         </form>

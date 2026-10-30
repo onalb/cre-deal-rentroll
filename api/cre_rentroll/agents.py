@@ -14,13 +14,17 @@ from typing import Any, Callable
 
 from cre_rentroll import tools, turn_ctx
 from cre_rentroll.run_events import emit
-from cre_rentroll.scope import NEED_FILE_TEXT, OOS_TEXT
+from cre_rentroll.scope import NEED_FILE_TEXT
 from cre_rentroll.settings import openai_client_args
 
 RATE_LIMIT_TEXT = (
     "The model is busy right now. Wait a minute and send again — "
     "this app did not keep retrying."
 )
+
+
+class PredictClarifyStop(RuntimeError):
+    """Predictor already answered (not-trained / which-plan). Stop ReAct."""
 
 
 class RateLimitedError(RuntimeError):
@@ -57,7 +61,6 @@ BOOK_TOOLS = (
     "compute_income",
     "compute_noi",
     "compute_cap_rate",
-    "ask_vacancy_agent",
     "ask_prediction_agent",
     "osm_geocode",
     "web_search",
@@ -85,9 +88,16 @@ def load_skill_text(names: tuple[str, ...]) -> str:
 
 
 def system_prompt(inv: Inventory, facts: str) -> str:
+    if not inv.tool_names:
+        return (
+            "You are the CRE Deal Rentroll agent. This turn has no tools because "
+            "the last user message is out of scope (personal or idle chat). "
+            "Write one short, friendly sentence in your own words: you answer "
+            "questions about the property, the deal, or the area it sits in, not "
+            "personal chat. Do not mention tools, plans, checklists, create_plan, "
+            "or score_gcr. Do not copy a fixed slogan."
+        )
     skills = load_skill_text(inv.skills)
-    floor_tool = "ask_vacancy_agent"
-    floor_cite = "cite its probabilities"
     vault_has = "VAULT HAS" in (facts or "")
     if vault_has:
         file_scope = (
@@ -107,7 +117,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
             "Never the need-file sentence and never compute_income/compute_noi as the "
             "answer. Python does not write a canned area/market figure. "
             "Talking to the agent as a person or idle chat stay out of scope even with "
-            "a vaulted roll — no tools, use the refuse sentence. "
+            "a vaulted roll — no tools; write a short friendly sentence in your own words. "
             "Locate / map / where is this property / they say the last geocode is the "
             "wrong country or place / search the map again: still THIS roll. Never the "
             "need-file sentence. Saying they already attached the spreadsheet is not a "
@@ -138,12 +148,28 @@ def system_prompt(inv: Inventory, facts: str) -> str:
             "Python does not write a canned area/market figure. "
             "Locate / map: if a street is already in this session or the last message, "
             "osm_geocode it — do not ask for a spreadsheet. "
-            "Talking to the agent as a person or idle chat still use the "
-            "out-of-scope refuse, not the need-file sentence.\n"
+            "Talking to the agent as a person or idle chat: write a short friendly "
+            "sentence in your own words, not the need-file sentence.\n"
         )
+    if "create_plan" in inv.tool_names:
+        intent_line = (
+            "Intent is your first create_plan checklist — Python does not pick a "
+            "specialist. "
+        )
+    elif "update_plan" in inv.tool_names:
+        # Planless turn: the menu has no create_plan. Python already routed
+        # this ask to one work tool — go straight to it, then score_gcr.
+        intent_line = (
+            "This turn is planless: Python routed the ask to a single work "
+            "tool. Call that work tool, then score_gcr — no create_plan. If you "
+            "discover more work, call update_plan with the new numbered list "
+            "first, then that tool. "
+        )
+    else:
+        intent_line = ""
     return (
         "You are the CRE Deal Rentroll agent (one ReAct loop, full tool menu). "
-        "Intent is your first create_plan checklist — Python does not pick a specialist. "
+        f"{intent_line}"
         "Python does not start a second run_agent if the draft is empty.\n"
         "Questions about this property, the rent roll, the deal, or the area/market "
         "it sits in are in scope — never the out-of-scope refuse. "
@@ -162,8 +188,10 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Do not introduce yourself or answer identity, greetings, or the agent's name. "
         "Talking to the agent as a person or idle chat (how are you, identity, "
         "greetings, the agent's name, chitchat, sports, recipes): answer without "
-        "tools using this exact text:\n"
-        f"{OOS_TEXT}\n"
+        "tools. Write one short friendly sentence in your own words that you only "
+        "answer questions about the property, the deal, or the area it sits in — not "
+        "personal chat. Do not mention create_plan, tools, checklists, or score_gcr. "
+        "Do not copy a fixed slogan.\n"
         "Idle weekend weather is OOS; facts about the property's area or market stay in scope.\n"
         "User-facing answers: a single ask is one prose sentence. If the last message "
         "asks several items (units, occupancy, vacant, in-place income, MTM, average "
@@ -178,12 +206,12 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Never skip create_plan on in-scope CRE. A one-item checklist is fine when that one tool "
         "answers the whole last message (this-deal occupancy only → query_units; "
         "which floor plan is more likely vacant, or the probability a unit type is vacant "
-        f"→ one {floor_tool}, and {floor_cite}; a vacant headcount stays "
+        "→ one ask_prediction_agent, and cite its probabilities; a vacant headcount stays "
         "query_units; "
         + (
             "12-month occupancy / expirations / MTM waterfall / loss-to-lease / "
             "predicted occupancy → one ask_prediction_agent on the one MCP, "
-            f"not query_units and not {floor_tool}; "
+            "not query_units; "
             "if that tool says the building is not trained or asks which floor plan "
             "(bullet list of plans, no probabilities), quote that as the user answer "
             "and STOP — do not call ask_prediction_agent again this turn with a "
@@ -223,7 +251,7 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "Talking to the agent as a person or idle chat: no create_plan, no score_gcr, "
         "and no other tools.\n"
         "Then call the ONE in_progress / next pending work tool (query_units, compute_income, "
-        f"compute_noi, compute_cap_rate, {floor_tool}"
+        "compute_noi, compute_cap_rate"
         + (", ask_prediction_agent" if "ask_prediction_agent" in inv.tool_names else "")
         + ", osm_geocode, "
         "web_search). After that vault "
@@ -264,8 +292,8 @@ def system_prompt(inv: Inventory, facts: str) -> str:
         "missing tool yourself — once, not until the turn cap. "
         "If the steps themselves are wrong, call update_plan with the new list. "
         "Do not wait for Python to replan or inject tools.\n"
-        "If web_search fails (search down / forced failure), do not call web_search again. "
-        "Mark that search item [incomplete], then YOU write a short user-facing sentence "
+        "If web_search fails, do not call web_search again this turn. Mark that item "
+        "[incomplete], then YOU write a short user-facing sentence "
         "and call score_gcr with that sentence. Mention cap rates, comps, sales news, or "
         "metro news only if THIS user question asked for those. Occupancy, rent-roll "
         "definitions, identity, and other non-comp asks must not mention cap rates. "
@@ -803,6 +831,11 @@ def _wrap_completions_create(
     if inspect.iscoroutinefunction(orig):
 
         async def acreate(*args: Any, **kwargs: Any) -> Any:
+            from cre_rentroll.present import quoted_prediction_clarification
+
+            quoted = quoted_prediction_clarification(turn_ctx.traces())
+            if quoted:
+                raise PredictClarifyStop(quoted)
             result = await orig(*args, **kwargs)
             return _after_openai_create(result, kind, on_result)
 
@@ -811,6 +844,11 @@ def _wrap_completions_create(
         return True
 
     def create(*args: Any, **kwargs: Any) -> Any:
+        from cre_rentroll.present import quoted_prediction_clarification
+
+        quoted = quoted_prediction_clarification(turn_ctx.traces())
+        if quoted:
+            raise PredictClarifyStop(quoted)
         result = orig(*args, **kwargs)
         if inspect.isawaitable(result):
 
@@ -913,6 +951,8 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
         bind_turn_context()
         try:
             return agent(prompt, limits={"turns": 12})
+        except PredictClarifyStop as exc:
+            return str(exc) or ""
         finally:
             clear_turn_context()
 
@@ -1189,19 +1229,6 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
             },
             "required": ["ask_price"],
         },
-        "ask_vacancy_agent": {
-            "type": "object",
-            "properties": {
-                "floor_plan": {
-                    "type": "string",
-                    "description": (
-                        "One floor plan to score. Omit to score every plan in "
-                        "this building. Use for the probability a plan is vacant. "
-                        "A vacant headcount stays query_units."
-                    ),
-                }
-            },
-        },
         "ask_prediction_agent": {
             "type": "object",
             "properties": {
@@ -1213,7 +1240,7 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
                     "type": "string",
                     "description": (
                         "Forward-looking occupancy / expirations / MTM / loss-to-lease "
-                        "question, or a short follow-up (plan name, renovated yes/no) after "
+                        "question, which floor plan is more likely vacant on this roll, or a short follow-up (plan name, renovated yes/no) after "
                         "the agent asked which group on a prior user turn. Pass THIS user "
                         "question; do not invent a building or floor plan they did not write. "
                         "If the tool asks which plan/group/building or lists trained "

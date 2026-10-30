@@ -24,10 +24,10 @@ def _canned_leftover(msgs: list[str]) -> list[str]:
     return [m for m in msgs if any(n in m for n in needles)]
 
 
-def test_on_tool_error_search_still_replans():
+def test_on_tool_error_names_the_failed_tool():
     note = on_tool_error("web_search", "forced failure")
-    assert "Replan" in note
-    assert "search down" in note.lower()
+    assert "web_search failed" in note
+    assert "Continue without looping" in note
 
 
 def test_no_canned_leftover_reflect_when_reflection_tool_used(monkeypatch):

@@ -15,7 +15,6 @@ MCP_TOOLS = frozenset(
         "compute_income",
         "compute_noi",
         "compute_cap_rate",
-        "ask_vacancy_agent",
         "ask_vacancy",
         "ask_prediction_agent",
         "osm_geocode",
@@ -359,9 +358,6 @@ def tool_message(name: str, args: dict[str, Any], result: Any) -> str:
         return f"{shown} → NOI {r.get('noi')}"
     if name == "compute_cap_rate":
         return f"{shown} → {r.get('implied_cap')} on ask {r.get('ask_price')}"
-    if name == "ask_vacancy_agent":
-        plans = r.get("plans") or []
-        return f"{shown} → vacancy agent scored {len(plans)} floor plans"
     if name == "ask_vacancy":
         if r.get("ok") is False:
             err = _prose_for_run_log(r.get("error") or "failed")

@@ -26,6 +26,11 @@ _initialized = False
 _menu: list[str] | None = None
 
 
+def mcp_role() -> str:
+    """Role stamped on every MCP POST. The gateway filters tools/list by it."""
+    return (os.environ.get("MCP_ROLE") or "deal").strip() or "deal"
+
+
 def mcp_url() -> str:
     raw = (
         os.environ.get("MCP_URL")
@@ -37,6 +42,10 @@ def mcp_url() -> str:
         if parsed.path in {"", "/"}:
             raw = raw + "/mcp"
     return raw
+
+
+def _is_agentcore(url: str = "") -> bool:
+    return "bedrock-agentcore" in (url or mcp_url()).lower()
 
 
 def reset_menu() -> None:
@@ -72,19 +81,29 @@ def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
     url = mcp_url()
     if not url:
         raise RuntimeError("MCP_URL is not set")
-    raw = _credentials()
-    creds = Credentials(raw["AccessKeyId"], raw["SecretAccessKey"], raw["SessionToken"])
     data = json.dumps(body).encode("utf-8")
-    request = AWSRequest(method="POST", url=url, data=data, headers=dict(_MCP_HEADERS))
-    SigV4Auth(creds, "bedrock-agentcore", os.environ.get("AWS_REGION") or "us-east-1").add_auth(request)
-    prepared = request.prepare()
-    response = httpx.post(
-        url,
-        content=prepared.body,
-        headers=dict(prepared.headers),
-        timeout=timeout,
-        follow_redirects=False,
-    )
+    headers = {**_MCP_HEADERS, "X-MCP-Role": mcp_role()}
+    if _is_agentcore(url):
+        raw = _credentials()
+        creds = Credentials(raw["AccessKeyId"], raw["SecretAccessKey"], raw["SessionToken"])
+        request = AWSRequest(method="POST", url=url, data=data, headers=headers)
+        SigV4Auth(creds, "bedrock-agentcore", os.environ.get("AWS_REGION") or "us-east-1").add_auth(request)
+        prepared = request.prepare()
+        response = httpx.post(
+            url,
+            content=prepared.body,
+            headers=dict(prepared.headers),
+            timeout=timeout,
+            follow_redirects=False,
+        )
+    else:
+        response = httpx.post(
+            url,
+            content=data,
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=False,
+        )
     if response.status_code in {301, 302, 303, 307, 308}:
         raise RuntimeError(f"MCP URL redirected ({response.status_code}); refusing to follow")
     if response.status_code >= 400:
@@ -153,7 +172,7 @@ def list_tools(timeout: float = 30.0) -> list[str]:
 
 def call_tool(name: str, arguments: dict[str, Any], timeout: float = 180.0) -> str:
     _ensure_session(timeout)
-    remote = f"cretools___{name}"
+    remote = f"cretools___{name}" if _is_agentcore() else name
     data = _sign_and_post(
         {
             "jsonrpc": "2.0",

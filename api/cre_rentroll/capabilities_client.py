@@ -20,7 +20,6 @@ CAPABILITY_TOOLS = frozenset(
         "compute_cap_rate",
         "osm_geocode",
         "web_search",
-        "ask_vacancy_agent",
         "ask_prediction_agent",
     }
 )

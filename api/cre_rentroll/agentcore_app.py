@@ -27,7 +27,6 @@ app = FastAPI(title="CRE Deal Rentroll AgentCore", version="0.1.0")
 class InvocationBody(BaseModel):
     prompt: str | None = None
     username: str | None = None
-    search_fail: bool = False
     has_attachment: bool = False
     chip_id: str = ""
     input: dict[str, Any] | None = None
@@ -45,7 +44,6 @@ def parse_payload(body: dict[str, Any] | InvocationBody) -> dict[str, Any]:
     return {
         "username": username,
         "prompt": prompt,
-        "search_fail": bool(raw.get("search_fail") or nested.get("search_fail")),
         "has_attachment": bool(raw.get("has_attachment") or nested.get("has_attachment")),
         "chip_id": str(raw.get("chip_id") or nested.get("chip_id") or ""),
     }
@@ -63,7 +61,6 @@ def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:
     return harness.run_task(
         args["username"],
         args["prompt"],
-        search_fail=args["search_fail"],
         has_attachment=args["has_attachment"],
         chip_id=args.get("chip_id") or "",
     )

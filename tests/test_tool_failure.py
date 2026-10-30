@@ -1,10 +1,11 @@
+"""Generic tool-failure behavior: no loop, no operator leak, no canned copy."""
+
 from cre_rentroll.agents import BOOK, system_prompt
 from cre_rentroll.harness import _user_facing_draft, run_task
 from cre_rentroll.present import is_operator_leak
 from cre_rentroll.reflect import on_tool_error
 from cre_rentroll.run_events import bind, reset
-from cre_rentroll.tools import create_plan, reflection, update_plan, web_search_failed
-from cre_rentroll.turn_ctx import checklist, record, reset_turn
+from cre_rentroll.turn_ctx import record, reset_turn
 
 _CAP_COPY = (
     "I couldn't look up recent multifamily cap rates or sales news because "
@@ -15,10 +16,10 @@ _LEAK = (
     "Need replan: call update_plan (MCP) with the NEW remaining work. "
     "Completed/incomplete rows stay on the list. Do not call create_plan (MCP) again."
 )
-_SEARCH_FAIL = {
+_SEARCH_ERR = {
     "name": "web_search",
     "args": {"query": "miami"},
-    "result": {"ok": False, "error": "web_search forced failure (search-down fixture)"},
+    "result": {"ok": False, "error": "web_search failed (network)"},
 }
 
 
@@ -29,18 +30,17 @@ def _assert_no_cap_copy(text: str) -> None:
     assert "metro comps" not in low
 
 
-def test_search_down_replans():
-    note = on_tool_error("web_search", "forced failure")
-    assert "Replan" in note
-    assert "loop" not in note.lower() or "not loop" in note.lower() or "do not loop" in note.lower()
-    assert "unavailable" in note.lower()
+def test_failed_tool_note_does_not_loop_or_inject_copy():
+    note = on_tool_error("web_search", "network")
+    assert "failed" in note.lower()
+    assert "without looping" in note.lower()
     _assert_no_cap_copy(note)
 
 
-def test_user_facing_draft_replaces_need_replan_leak_after_search_fail():
+def test_user_facing_draft_replaces_need_replan_leak_after_failed_tool():
     reset_turn("tester")
     assert is_operator_leak(_LEAK)
-    out = _user_facing_draft(_LEAK, [_SEARCH_FAIL])
+    out = _user_facing_draft(_LEAK, [_SEARCH_ERR])
     _assert_no_cap_copy(out)
     assert "update_plan" not in out
     assert "Need replan" not in out
@@ -75,36 +75,6 @@ def test_user_facing_draft_strips_plan_checklist_leak():
     assert "query_units" not in out
     assert "Current step" not in out
     assert "could not finish" in out.lower()
-
-
-def test_update_plan_after_failed_search_marks_incomplete_not_retry():
-    reset_turn("tester")
-    create_plan("1. [pending] Search for recent multifamily cap rates or sales in the Miami metro.")
-    record(
-        "web_search",
-        {"query": "recent multifamily cap rates sales Miami"},
-        {"ok": False, "error": "web_search forced failure (search-down fixture)"},
-    )
-    assert web_search_failed()
-    out = update_plan("1. Search for recent multifamily cap rates or sales in the Miami metro.")
-    assert "do not call web_search again" in out.lower()
-    assert "unavailable" in out.lower()
-    assert checklist()[0]["status"] == "incomplete"
-    _assert_no_cap_copy(out)
-
-
-def test_reflection_after_search_fail_does_not_ask_same_search():
-    reset_turn("tester")
-    record(
-        "web_search",
-        {"query": "x"},
-        {"ok": False, "error": "web_search forced failure (search-down fixture)"},
-    )
-    msg = reflection("search failed", need_replan=True)
-    assert "do not call web_search again" in msg.lower()
-    assert "unavailable" in msg.lower()
-    assert "do not copy this tool result" in msg.lower()
-    _assert_no_cap_copy(msg)
 
 
 def test_prompt_forbids_search_retry_and_operator_leak():
@@ -145,7 +115,7 @@ def _stub_in_scope_run(monkeypatch, question: str, draft: str, *, vaulted: bool)
         record(
             "web_search",
             {"query": question},
-            {"ok": False, "error": "web_search forced failure (search-down fixture)"},
+            {"ok": False, "error": "web_search failed (network)"},
         )
         return draft
 
@@ -159,7 +129,7 @@ def _stub_in_scope_run(monkeypatch, question: str, draft: str, *, vaulted: bool)
     return out, seen
 
 
-def test_occupancy_search_fail_does_not_inject_cap_copy(monkeypatch):
+def test_occupancy_with_failed_search_does_not_inject_cap_copy(monkeypatch):
     out, seen = _stub_in_scope_run(
         monkeypatch, "What is occupancy?", _LEAK, vaulted=True
     )
@@ -168,7 +138,7 @@ def test_occupancy_search_fail_does_not_inject_cap_copy(monkeypatch):
     assert any("web_search" in (row.get("message") or "") for row in seen)
 
 
-def test_rent_roll_definition_search_fail_does_not_inject_cap_copy(monkeypatch):
+def test_rent_roll_definition_with_failed_search_does_not_inject_cap_copy(monkeypatch):
     out, _seen = _stub_in_scope_run(
         monkeypatch, "What's a rent roll?", _LEAK, vaulted=False
     )

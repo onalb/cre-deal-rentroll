@@ -1,14 +1,16 @@
 /** Same names as api/cre_rentroll/run_events.py MCP_TOOLS (longest first). */
 export const LOG_TOOL_NAMES = [
+  "ask_prediction_agent",
+  "update_plan_status",
   "compute_cap_rate",
   "compute_income",
+  "ask_vacancy",
   "query_units",
   "osm_geocode",
-  "web_search",
   "create_plan",
-  "update_plan_status",
   "update_plan",
   "compute_noi",
+  "web_search",
   "reflection",
   "score_gcr",
 ];

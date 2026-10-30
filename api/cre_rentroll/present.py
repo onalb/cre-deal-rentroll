@@ -11,13 +11,14 @@ _OPERATOR_LEAK = re.compile(
     r"Search already failed)"
 )
 _WORK = (
-    r"query_units|compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_vacancy|ask_prediction_agent|"
+    r"query_units|compute_income|compute_noi|compute_cap_rate|ask_vacancy|ask_prediction_agent|"
     r"osm_geocode|web_search|create_plan|update_plan(?:_status)?|"
     r"score_gcr|reflection"
 )
 _PLAN_LINE = re.compile(
     rf"(?im)^\s*\d+\.\s*(?:\[[^\]]+\]\s*)?(?:{_WORK})\b"
 )
+_PLAN_HEADING = re.compile(rf"(?im)^\s*(?:{_WORK})\s*:")
 _CURRENT_STEP = re.compile(r"(?im)^\s*Current step\s*:")
 _NEXT_STEPS = re.compile(r"(?im)^\s*Next steps\s*:")
 _INVENTORY_LINE = re.compile(
@@ -32,7 +33,7 @@ _REACT_NARRATE = re.compile(
 )
 _FAKE_TOOL_JSON = re.compile(r"(?is)recipient_name|functions\.")
 _STATUS_TAG = re.compile(
-    r"(?i)\[(?:tag:\s*)?(?:in_progress|pending|completed|incomplete)\]"
+    r"(?i)\[(?:tag:\s*)?(?:in_progress|pending|completed|incomplete)\s*:?\s*[^\]]*\]"
 )
 _TOOL_JSON_KEYS = frozenset(
     {
@@ -66,9 +67,7 @@ def user_visible(raw: str) -> str:
 
 
 def quoted_prediction_clarification(traces: list) -> str:
-    """Vacancy MCP not-trained / which-plan text, if the Book called that tool."""
-    from cre_rentroll.predict_followup import looks_like_clarification
-
+    """Last vacancy-agent answer this turn — scores and user instructions alike."""
     for row in reversed(traces or []):
         if str(row.get("name") or "") != "ask_prediction_agent":
             continue
@@ -76,7 +75,7 @@ def quoted_prediction_clarification(traces: list) -> str:
         if not isinstance(result, dict):
             continue
         answer = str(result.get("answer") or "").strip()
-        if answer and looks_like_clarification(answer):
+        if answer:
             return answer
     return ""
 
@@ -179,7 +178,12 @@ def is_operator_leak(draft: str) -> bool:
     low = text.lower()
     if "call update_plan" in low and "new remaining work" in low:
         return True
-    if _PLAN_LINE.search(text) or _CURRENT_STEP.search(text) or _NEXT_STEPS.search(text):
+    if (
+        _PLAN_LINE.search(text)
+        or _PLAN_HEADING.search(text)
+        or _CURRENT_STEP.search(text)
+        or _NEXT_STEPS.search(text)
+    ):
         return True
     if _INVENTORY_LINE.search(text) or _REACT_NARRATE.search(text):
         return True
@@ -214,7 +218,12 @@ def strip_operator_echo(draft: str) -> str:
     text = _strip_leaked_tool_json(strip_eval_json(draft))
     kept: list[str] = []
     for line in text.splitlines():
-        if _PLAN_LINE.match(line) or _CURRENT_STEP.match(line) or _NEXT_STEPS.match(line):
+        if (
+            _PLAN_LINE.match(line)
+            or _PLAN_HEADING.match(line)
+            or _CURRENT_STEP.match(line)
+            or _NEXT_STEPS.match(line)
+        ):
             continue
         if _INVENTORY_LINE.search(line) or _OPERATOR_LEAK.match(line.strip()):
             continue

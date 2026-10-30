@@ -1,48 +1,27 @@
-"""Deal stubs call /mcp/deal. They do not score a floor plan locally."""
+"""The in-gateway floor-plan fit tool is gone; one prediction tool remains."""
 
 import inspect
-import json
 
-from cre_rentroll.capabilities_client import GATEWAY_REQUIRED
-from cre_rentroll.tools import TOOL_IMPLS, ask_vacancy_agent
-from cre_rentroll.turn_ctx import reset_turn
-
-
-def test_ask_vacancy_agent_requires_gateway_when_unset(monkeypatch):
-    monkeypatch.delenv("MCP_URL", raising=False)
-    monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
-    reset_turn("ada")
-    body = json.loads(ask_vacancy_agent("1x1 Reno"))
-    assert body["ok"] is False
-    assert body["error"] == GATEWAY_REQUIRED
-    assert "capabilities gateway is required" in body["error"]
+from cre_rentroll.agents import BOOK
+from cre_rentroll.capabilities_client import CAPABILITY_TOOLS
+from cre_rentroll.tools import TOOL_IMPLS, WORK_TOOL_NAMES, ask_prediction_agent
 
 
-def test_ask_vacancy_agent_posts_floor_plan(monkeypatch):
-    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
-    seen: dict = {}
+def test_ask_vacancy_agent_is_off_the_menu_everywhere():
+    assert "ask_vacancy_agent" not in BOOK.tool_names
+    assert "ask_vacancy_agent" not in TOOL_IMPLS
+    assert "ask_vacancy_agent" not in WORK_TOOL_NAMES
+    assert "ask_vacancy_agent" not in CAPABILITY_TOOLS
+    assert "ask_vacancy" not in BOOK.tool_names
+    assert "ask_prediction_agent" in BOOK.tool_names
+    assert "ask_prediction_agent" in TOOL_IMPLS
 
-    def fake(name, arguments, timeout=180.0):
-        seen["name"] = name
-        seen["arguments"] = arguments
-        return json.dumps(
-            {
-                "agent": "vacancy",
-                "ok": True,
-                "plans": [{"plan": "1x1 Reno", "probability": 0.4}],
-                "answer": "1x1 Reno is vacant with probability 0.4.",
-            }
-        )
 
-    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
-    reset_turn("ada")
-    payload = json.loads(ask_vacancy_agent("1x1 Reno"))
-    assert payload["plans"][0]["plan"] == "1x1 Reno"
-    assert seen["name"] == "ask_vacancy_agent"
-    assert seen["arguments"]["floor_plan"] == "1x1 Reno"
-    assert seen["arguments"]["username"] == "ada"
-    assert TOOL_IMPLS["ask_vacancy_agent"] is ask_vacancy_agent
-    source = inspect.getsource(ask_vacancy_agent)
+def test_the_prediction_tool_does_not_fit_or_load_a_roll_locally():
+    source = inspect.getsource(ask_prediction_agent)
     assert "VacancyAgent" not in source
     assert "_sigmoid" not in source
     assert "load_roll" not in source
+    assert "plan_table" not in source  # attached gateway-side, never by the model
+    for name in TOOL_IMPLS:
+        assert name != "ask_vacancy_agent"

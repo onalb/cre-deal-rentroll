@@ -127,4 +127,3 @@ def test_score_gcr_invokes_lambda_when_arn_is_set(monkeypatch):
     assert sent["query"] == "What is occupancy?"
     assert sent["roll"]["property_name"] == "Hill"
     assert "username" not in sent
-    assert "force_fail" not in sent

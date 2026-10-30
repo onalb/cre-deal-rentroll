@@ -182,6 +182,7 @@ class EvalScores(BaseModel):
     retry: bool = False
     judge: str | None = None
     reason: str | None = None
+    instructional: bool | None = None
 
 
 class ChatOutcome(BaseModel):

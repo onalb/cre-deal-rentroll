@@ -12,7 +12,7 @@ assert.deepEqual(ids, [
   "locate",
   "underwrite",
   "buy",
-  "search-down",
+  "cap-rates",
   "predict",
   "weather",
 ]);
@@ -27,7 +27,7 @@ assert.match(abstract.prompt, /average unit sqft/i);
 assert.match(abstract.prompt, /month-to-month/i);
 assert.doesNotMatch(abstract.prompt, /short bullet/i);
 assert.doesNotMatch(abstract.prompt, /not one paragraph/i);
-assert.equal(abstract.searchFail, false);
+assert.equal("searchFail" in abstract, false);
 
 const agentsPy = readFileSync(
   new URL("../../api/cre_rentroll/agents.py", import.meta.url),
@@ -55,7 +55,7 @@ assert.match(predict.prompt, /income is at risk/i);
 assert.match(predict.prompt, /\{property_name\}/);
 assert.doesNotMatch(predict.prompt, /as of|\{as_of\}/i);
 assert.match(predict.prompt, /Do not request a rent roll file/i);
-assert.equal(predict.searchFail, false);
+assert.equal("searchFail" in predict, false);
 
 const predictOnly = DEMO_CHIPS.find((c) => c.id === "predict_occupancy_only");
 assert.equal(predictOnly.label, "Predict occupancy");
@@ -71,7 +71,7 @@ assert.equal(
   fillChipPrompt(predictOnly.prompt, { property_name: "La Cordoba", as_of: "2024-06-01" }),
   "What occupancy do you predict for {{Property Name}}",
 );
-assert.equal(predictOnly.searchFail, false);
+assert.equal("searchFail" in predictOnly, false);
 
 assert.notEqual(predict.label, predictOnly.label);
 

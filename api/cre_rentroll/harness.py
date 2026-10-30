@@ -10,6 +10,7 @@ from cre_rentroll.settings import openai_api_key
 from cre_rentroll.eval_service import cited_locate_map_draft, format_eval_log, gate
 from cre_rentroll.ingest import ack_text, as_of_from_message, ingest_bytes
 from cre_rentroll.memory import facts_prompt, generate_from_roll, write_trace
+from cre_rentroll.planless import single_tool_intent, this_roll_needs_file
 from cre_rentroll.schemas import CanonicalRentRoll, ChatOutcome, EvalScores
 from cre_rentroll.present import (
     answer_prose,
@@ -20,7 +21,7 @@ from cre_rentroll.present import (
     strip_operator_echo,
     user_visible,
 )
-from cre_rentroll.scope import classify_scope
+from cre_rentroll.scope import NEED_FILE_TEXT, classify_scope
 from cre_rentroll.run_events import emit, emit_stop_and_summary
 
 
@@ -84,6 +85,9 @@ _SESSION_FOLLOW = (
     "Idle weekend weather is OOS; facts about the property's area or market stay in scope. "
     "12-month occupancy / expirations / MTM waterfall / predicted occupancy → "
     "ask_prediction_agent (not query_units). "
+)
+
+_PLAN_MANDATE = (
     "In-scope (this property, the rent roll, the deal, or the area/market it sits in): "
     "first tool is always create_plan. "
     "One numbered line per needed work tool — not per comma in the user sentence. "
@@ -101,15 +105,44 @@ _SESSION_FOLLOW = (
     "FIRST, then that tool. "
 )
 
+_PLANLESS_NOTE = (
+    "This turn is PLANLESS — Python routed this ask to exactly one work tool: "
+    "call that work tool directly, then score_gcr. No create_plan and no "
+    "update_plan_status (they are not on the menu). Only if you discover a "
+    "second, different work tool is needed: call update_plan with the NEW "
+    "numbered remaining list first, then that tool."
+)
 
-def session_prompt(message: str, history: list[dict[str, Any]] | None = None) -> str:
+
+_OOS_FOLLOW = (
+    "The last User message is out of scope. Reply with one short, friendly "
+    "sentence in your own words — this agent answers questions about the "
+    "property, the deal, or the area it sits in, not personal chat. Do not "
+    "mention tools, plans, checklists, or create_plan. Do not copy a canned line."
+)
+
+
+def _session_follow(planless: str | None = None, *, cre_ask: bool = True) -> str:
+    """The create_plan mandate is turn-scoped: planless turns get their own note."""
+    if not cre_ask:
+        return _OOS_FOLLOW
+    return _SESSION_FOLLOW + (_PLANLESS_NOTE if planless else _PLAN_MANDATE)
+
+
+def session_prompt(
+    message: str,
+    history: list[dict[str, Any]] | None = None,
+    planless: str | None = None,
+    *,
+    cre_ask: bool = True,
+) -> str:
     """Stuff stored SESSION user+assistant turns into the ReAct user prompt.
 
     Dynamo already keeps messages; this does not add a new memory product.
     Newest prior turns are kept if the transcript would exceed the limit.
     The current user line is never dropped.
     """
-    current = f"User: {(message or '').strip()}\n\n{_SESSION_FOLLOW}"
+    current = f"User: {(message or '').strip()}\n\n{_session_follow(planless, cre_ask=cre_ask)}"
     prior: list[str] = []
     for row in history or []:
         role = str(row.get("role") or "").strip().lower()
@@ -183,7 +216,6 @@ def run_task(
     username: str,
     message: str,
     *,
-    search_fail: bool = False,
     has_attachment: bool = False,
     skip_scope: bool = False,
     persist_as: str | None = None,
@@ -195,7 +227,6 @@ def run_task(
         return invoke_run_task(
             username,
             message,
-            search_fail=search_fail,
             has_attachment=has_attachment,
             chip_id=chip_id,
         )
@@ -206,9 +237,7 @@ def run_task(
     from cre_rentroll.mcp_gateway import reset_menu
 
     reset_menu()
-    traces = turn_ctx.reset_turn(
-        username, search_fail=search_fail, keep_run=skip_scope
-    )
+    traces = turn_ctx.reset_turn(username, keep_run=skip_scope)
     asked = as_of_from_message(shown_user)
     turn_ctx.set_asked_as_of(asked)
     turn_ctx.set_eval_query(shown_user)
@@ -217,31 +246,56 @@ def run_task(
     retry_used = bool(sess.get("eval_retry_used"))
     roll = vault.load_roll(username)
     has_vault = roll is not None
-    # Tool-less agent hop (IN_SCOPE vs OOS). Python does not lexicon-match CRE.
-    try:
-        cre_ask = classify_scope(shown_user, messages)
-    except Exception as exc:
-        if is_rate_limited(exc):
-            emit_stop_and_summary(
-                "OpenAI rate limited (429)",
-                traces=traces,
-                retry_n=turn_ctx.retry_count(),
-                token_text=shown_user,
-                started=turn_ctx.run_started(),
-            )
-            outcome = ChatOutcome(
-                kind="error",
-                text=RATE_LIMIT_TEXT,
-                stop_reason="openai_rate_limited",
-            )
-            _persist(username, messages, shown_user, outcome, run_id, traces)
-            return outcome
-        cre_ask = False
-    emit(
-        "llm",
-        f"scope hop (no tools) → {'IN_SCOPE' if cre_ask else 'OOS'} (LLM)",
-        llm=True,
+    from cre_rentroll.predict_followup import (
+        is_followup_reply,
+        session_awaiting_followup,
     )
+
+    predict_followup = bool(
+        username
+        and session_awaiting_followup(username)
+        and is_followup_reply(shown_user)
+    )
+    # A plan/variant pick after the vacancy agent asked is still this deal —
+    # do not send a one-token reply ("0", "1x1") through the OOS hop.
+    if predict_followup:
+        cre_ask = True
+    else:
+        # Tool-less agent hop (IN_SCOPE vs OOS). Python does not lexicon-match CRE.
+        try:
+            cre_ask = classify_scope(shown_user, messages)
+        except Exception as exc:
+            if is_rate_limited(exc):
+                emit_stop_and_summary(
+                    "OpenAI rate limited (429)",
+                    traces=traces,
+                    retry_n=turn_ctx.retry_count(),
+                    token_text=shown_user,
+                    started=turn_ctx.run_started(),
+                )
+                outcome = ChatOutcome(
+                    kind="error",
+                    text=RATE_LIMIT_TEXT,
+                    stop_reason="openai_rate_limited",
+                )
+                _persist(username, messages, shown_user, outcome, run_id, traces)
+                return outcome
+            cre_ask = False
+        emit(
+            "llm",
+            f"scope hop (no tools) → {'IN_SCOPE' if cre_ask else 'OOS'} (LLM)",
+            llm=True,
+        )
+
+    if cre_ask and this_roll_needs_file(shown_user, has_vault=has_vault):
+        emit(
+            "inventory",
+            "no tools (need rent-roll file)",
+            inventories=[],
+        )
+        return _scope_need_file(
+            username, messages, shown_user, traces, run_id, text=NEED_FILE_TEXT
+        )
 
     if cre_ask:
         try:
@@ -250,12 +304,34 @@ def run_task(
             begin_turn(username)
         except Exception:
             pass
-        names = filter_book_tools(BOOK.tool_names, shown_user, username=username)
         from cre_rentroll.mcp_gateway import list_tools, mcp_url
+        from cre_rentroll.tools import TOOL_IMPLS
 
         if mcp_url():
-            allowed = set(list_tools())
-            names = tuple(name for name in names if name in allowed)
+            # Gateway-driven menu: the gateway is the source of truth when it
+            # is configured. Its role-filtered tools/list answer is the base
+            # menu, and the app keeps only names it has local implementations
+            # for (cre_ping and vacancy-role tools have no deal-app impl).
+            names = tuple(n for n in list_tools() if n in TOOL_IMPLS)
+            # App-side per-turn orchestration on top of the gateway menu.
+            names = filter_book_tools(names, shown_user, username=username)
+        else:
+            # Offline fallback: BOOK_TOOLS is the hardcoded menu when no
+            # gateway is configured (tests, local dev). The gateway answer
+            # above replaces it whenever MCP_URL is set.
+            names = filter_book_tools(BOOK.tool_names, shown_user, username=username)
+        single = single_tool_intent(
+            shown_user, has_vault=has_vault, predict_followup=predict_followup
+        )
+        if single:
+            # Planless turn: Python (not the model) routed this ask to one work
+            # tool. create_plan / update_plan_status leave the menu so the work
+            # tool runs first, then score_gcr. update_plan stays on the menu as
+            # the escape hatch if more work shows up mid-turn.
+            names = tuple(
+                n for n in names if n not in ("create_plan", "update_plan_status")
+            )
+            turn_ctx.set_planless(single)
         skills = BOOK.skills
         if allow_predict(shown_user, username=username):
             skills = (*skills, "rr-predict")
@@ -270,7 +346,11 @@ def run_task(
     if not cre_ask:
         inventory_line = "no tools (non-CRE ask)"
     else:
-        label = "full tool menu (book, predict)" if predict_on else "full tool menu (book)"
+        plan_tool = turn_ctx.planless()
+        if plan_tool:
+            label = f"planless menu — {plan_tool} (single-tool ask, no create_plan)"
+        else:
+            label = "full tool menu (book, predict)" if predict_on else "full tool menu (book)"
         listed = ", ".join(inv.tool_names)
         inventory_line = f"{label}: {listed}" if listed else label
     emit(
@@ -299,10 +379,13 @@ def run_task(
         return outcome
 
     for book_inv, _sub in subgoals:
-        prompt = session_prompt(llm_user, messages)
+        prompt = session_prompt(
+            llm_user, messages, planless=turn_ctx.planless(), cre_ask=cre_ask
+        )
         try:
             draft = _invoke_react(book_inv, prompt, facts)
         except RateLimitedError as exc:
+            quoted = quoted_prediction_clarification(traces)
             emit_stop_and_summary(
                 "OpenAI rate limited (429)",
                 traces=traces,
@@ -312,19 +395,20 @@ def run_task(
                 started=turn_ctx.run_started(),
             )
             outcome = ChatOutcome(
-                kind="error",
-                text=str(exc) or RATE_LIMIT_TEXT,
-                stop_reason="openai_rate_limited",
+                kind="warning" if quoted else "error",
+                text=quoted or str(exc) or RATE_LIMIT_TEXT,
+                stop_reason="openai_rate_limited" if not quoted else "predict_clarify",
                 tools_called=list(dict.fromkeys(tools_called)),
             )
             _persist(username, messages, shown_user, outcome, run_id, traces)
             return outcome
         except Exception as exc:
             if is_rate_limited(exc):
+                quoted = quoted_prediction_clarification(traces)
                 outcome = ChatOutcome(
-                    kind="error",
-                    text=RATE_LIMIT_TEXT,
-                    stop_reason="openai_rate_limited",
+                    kind="warning" if quoted else "error",
+                    text=quoted or RATE_LIMIT_TEXT,
+                    stop_reason="openai_rate_limited" if not quoted else "predict_clarify",
                     tools_called=list(dict.fromkeys(tools_called)),
                 )
                 _persist(username, messages, shown_user, outcome, run_id, traces)
@@ -341,12 +425,30 @@ def run_task(
 
     raw_draft = "\n\n".join(drafts)
     tools_called.extend(t["name"] for t in traces)
-    draft_text = _user_facing_draft(raw_draft, traces)
 
     if not cre_ask:
+        shown = strip_operator_echo(answer_prose(raw_draft))
+        if not _oos_usable(shown, shown_user):
+            try:
+                raw_draft = _invoke_react(
+                    inv,
+                    session_prompt(llm_user, messages, cre_ask=False),
+                    facts,
+                )
+            except RateLimitedError as exc:
+                shown = str(exc) or RATE_LIMIT_TEXT
+            except Exception as exc:
+                if is_rate_limited(exc):
+                    shown = RATE_LIMIT_TEXT
+                else:
+                    shown = strip_operator_echo(answer_prose(str(exc)))
+            else:
+                shown = strip_operator_echo(answer_prose(raw_draft))
         return _oos_chat(
-            username, messages, shown_user, traces, run_id, text=draft_text
+            username, messages, shown_user, traces, run_id, text=shown
         )
+
+    draft_text = _user_facing_draft(raw_draft, traces)
 
     if _vault_need_file_hit(traces):
         return _scope_need_file(
@@ -575,7 +677,6 @@ def _emit_if_reused_memory(
         "compute_income",
         "compute_noi",
         "compute_cap_rate",
-        "ask_vacancy_agent",
         "ask_prediction_agent",
     }:
         return
@@ -628,6 +729,16 @@ def _vault_need_file_hit(traces: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _oos_usable(text: str, asked: str) -> bool:
+    """True when OOS draft is a real user sentence, not planner leak or an echo."""
+    shown = strip_operator_echo(answer_prose(text))
+    if not (shown or "").strip() or is_operator_leak(shown):
+        return False
+    if shown.strip().lower() == (asked or "").strip().lower():
+        return False
+    return True
+
+
 def _oos_chat(
     username: str,
     messages: list[dict[str, Any]],
@@ -637,13 +748,10 @@ def _oos_chat(
     *,
     text: str,
 ) -> ChatOutcome:
-    """Keep the model wording. Do not swap in OOS_TEXT or run score_gcr / MCP."""
+    """Keep the model wording. Do not swap in a canned refuse or run score_gcr / MCP."""
     shown = strip_operator_echo(answer_prose(text))
-    if not (shown or "").strip() or is_operator_leak(shown):
-        shown = (
-            "I could not finish that answer this turn. "
-            "Please send the question again."
-        )
+    if is_operator_leak(shown) or shown.strip().lower() == (shown_user or "").strip().lower():
+        shown = ""
     scores = EvalScores(judge="not_run")
     emit_stop_and_summary(
         "out of scope",

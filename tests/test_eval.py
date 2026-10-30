@@ -848,8 +848,44 @@ def test_judge_prompt_percent_vs_fraction_and_vacant_only():
     assert "clarify-from-predictor" in JUDGE_SYS.lower()
     assert "query_units occupancy" in JUDGE_SYS.lower()
     assert "must include occupancy % from the vault" in JUDGE_SYS.lower()
+    assert "instructional" in JUDGE_SYS.lower()
     assert "la cordoba" not in JUDGE_SYS.lower()
     assert "80019" not in JUDGE_SYS
+
+
+_AGGREGATE_CLARIFY = (
+    'Your label ("average of the 1x1 renovated and 2x1 renovated plans") covers '
+    "more than one saved group — I can't score an aggregate label directly. "
+    "The renovated plan variants saved for Bay View Gardens Apartments "
+    "(as of 2021-05-25) are:\n"
+    "- 1x1 (renovated = 1)\n"
+    "- 2x1 (renovated = 1)\n\n"
+    "Which would you like me to score?\n"
+    '- Pick one exact plan_key (e.g., "1x1" renovated = 1 or "2x1" renovated = 1), or\n'
+    "- Ask for separate scores for both plans"
+)
+
+
+def test_vacancy_agent_reply_is_always_quoted():
+    from cre_rentroll.present import quoted_prediction_clarification
+
+    traces = [
+        {
+            "name": "ask_prediction_agent",
+            "result": {"ok": True, "answer": _AGGREGATE_CLARIFY},
+        }
+    ]
+    assert quoted_prediction_clarification(traces) == _AGGREGATE_CLARIFY
+    assert prediction_clarify_draft(_AGGREGATE_CLARIFY, traces)
+    occupancy = "Predicted occupancy for 1x1 renovated is 21.4% as of 2021-05-25."
+    score_traces = [
+        {
+            "name": "ask_prediction_agent",
+            "result": {"ok": True, "answer": occupancy},
+        }
+    ]
+    assert quoted_prediction_clarification(score_traces) == occupancy
+    assert prediction_clarify_draft(occupancy, score_traces)
 
 
 def test_predictor_clarify_draft_is_complete_not_missing_occupancy(monkeypatch):
@@ -872,7 +908,7 @@ def test_predictor_clarify_draft_is_complete_not_missing_occupancy(monkeypatch):
     )
     captured = _mock_openai(
         monkeypatch,
-        '{"R":5,"G":5,"request_C":5,"reason":"quoted predictor clarifying question"}',
+        '{"R":5,"G":5,"request_C":5,"reason":"quoted predictor clarifying question","instructional":true}',
     )
     assert prediction_clarify_draft(draft, traces)
     assert has_cre_payload(draft, q, traces)
@@ -889,6 +925,7 @@ def test_predictor_clarify_draft_is_complete_not_missing_occupancy(monkeypatch):
     assert scores.judge == "llm"
     assert scores.reason != "draft missing CRE payload"
     assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
+    assert scores.instructional is True
     assert scores.vault_calc_ok is True
     assert gate(scores, retry_used=False) == "show"
     user = captured["kwargs"]["messages"][1]["content"]
@@ -985,6 +1022,115 @@ def test_harness_predictor_clarify_is_not_eval_error(monkeypatch):
     assert outcome.kind != "error"
     assert "which floor plan" in (outcome.text or "").lower()
     assert "plan alpha" in (outcome.text or "").lower()
+
+
+def test_harness_predictor_occupancy_score_is_not_eval_error(monkeypatch):
+    from cre_rentroll.harness import run_task
+    from cre_rentroll.run_events import bind, reset
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import record
+
+    draft = "Predicted occupancy for 1x1 renovated is 21.4% as of 2021-05-25."
+
+    def fake_agent(*_a, **_k):
+        record(
+            "ask_prediction_agent",
+            {"question": "What occupancy do you predict?"},
+            {"ok": True, "answer": draft, "source": "vacancy-prediction-agent"},
+        )
+        score_gcr(draft)
+        return "The model is busy right now. Try again in a few seconds."
+
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=2,
+            G=2,
+            request_C=2,
+            vault_calc_ok=True,
+            judge="llm",
+            reason="does not match vault occupancy",
+            instructional=False,
+        ),
+    )
+    token = bind(lambda *_a, **_k: None)
+    try:
+        outcome = run_task("tester", "What occupancy do you predict?", skip_scope=True)
+    finally:
+        reset(token)
+    assert outcome.stop_reason != "eval_error"
+    assert outcome.kind != "error"
+    assert "21.4%" in (outcome.text or "")
+    assert "busy" not in (outcome.text or "").lower()
+
+
+def test_score_gcr_instructional_sets_awaiting_followup(monkeypatch):
+    from cre_rentroll.predict_followup import reset_predict_state, session_awaiting_followup
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import record, reset_turn, set_eval_query
+
+    q = "What occupancy do you predict?"
+    draft = (
+        'Your label covers more than one saved group — I can\'t score an '
+        "aggregate label directly. Which would you like me to score?"
+    )
+    reset_predict_state()
+    reset_turn("tester")
+    set_eval_query(q)
+    record(
+        "ask_prediction_agent",
+        {"question": q},
+        {"ok": True, "answer": draft, "source": "vacancy-prediction-agent"},
+    )
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=5,
+            G=5,
+            request_C=5,
+            vault_calc_ok=True,
+            judge="llm",
+            reason="quoted vacancy instructions",
+            instructional=True,
+        ),
+    )
+    json.loads(score_gcr(draft))
+    assert session_awaiting_followup("tester") is True
+
+    reset_predict_state()
+    reset_turn("tester")
+    set_eval_query(q)
+    occupancy = "Predicted occupancy for 1x1 renovated is 21.4% as of 2021-05-25."
+    record(
+        "ask_prediction_agent",
+        {"question": q},
+        {"ok": True, "answer": occupancy, "source": "vacancy-prediction-agent"},
+    )
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(
+            R=5,
+            G=5,
+            request_C=5,
+            vault_calc_ok=True,
+            judge="llm",
+            reason="quoted vacancy score",
+            instructional=False,
+        ),
+    )
+    json.loads(score_gcr(occupancy))
+    assert session_awaiting_followup("tester") is False
 
 
 def test_judge_facts_include_percent_display(monkeypatch):

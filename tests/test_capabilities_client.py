@@ -18,7 +18,7 @@ from cre_rentroll.capabilities_client import (
     fetch_skills,
 )
 from cre_rentroll.chips import filter_book_tools
-from cre_rentroll.tools import ask_prediction_agent, ask_vacancy_agent, create_plan, query_units
+from cre_rentroll.tools import ask_prediction_agent, create_plan, query_units
 from cre_rentroll.turn_ctx import reset_turn
 
 
@@ -27,7 +27,7 @@ def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
     monkeypatch.delenv("MCP_URL", raising=False)
     monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
     names = filter_book_tools(BOOK.tool_names, "how many units")
-    assert "ask_vacancy_agent" in names
+    assert "ask_vacancy_agent" not in names
     assert "ask_prediction_agent" not in names
     assert "ask_vacancy" not in names
     assert "create_plan" in names
@@ -39,7 +39,7 @@ def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
 def test_menu_keeps_the_same_names_when_gateway_is_set(monkeypatch):
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     names = filter_book_tools(BOOK.tool_names, "how many units")
-    assert "ask_vacancy_agent" in names
+    assert "ask_vacancy_agent" not in names
     assert "ask_vacancy" not in names
     assert "create_plan" in names
     assert "score_gcr" in names
@@ -97,23 +97,19 @@ def test_query_units_posts_deal_tool_when_set(monkeypatch):
     assert seen["arguments"]["username"] == "ada"
 
 
-def test_floor_and_prediction_tools_post_their_names(monkeypatch):
+def test_prediction_tool_posts_its_name(monkeypatch):
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     seen: list[str] = []
 
     def fake(name, arguments, timeout=180.0):
         seen.append(name)
-        if name == "ask_vacancy_agent":
-            return json.dumps({"ok": True, "answer": "A1 is the vacant plan.", "plans": []})
         return json.dumps({"ok": True, "answer": "not trained", "awaiting_followup": True})
 
     monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
     reset_turn("ada")
-    floor = json.loads(ask_vacancy_agent("A1"))
     pred = json.loads(ask_prediction_agent(12, "what occupancy do you predict?"))
-    assert floor["answer"].startswith("A1")
     assert pred["answer"] == "not trained"
-    assert seen == ["ask_vacancy_agent", "ask_prediction_agent"]
+    assert seen == ["ask_prediction_agent"]
 
 
 def test_skills_come_from_gateway_when_set(monkeypatch):

@@ -19,7 +19,6 @@ _WORK_TOOLS = frozenset(
         "compute_income",
         "compute_noi",
         "compute_cap_rate",
-        "ask_vacancy_agent",
         "ask_prediction_agent",
         "osm_geocode",
         "web_search",
@@ -62,12 +61,10 @@ def load_cases(path: Path | None = None) -> list[dict[str, Any]]:
     return cases
 
 
-def case_query(case: dict[str, Any], cases: list[dict[str, Any]]) -> tuple[str, bool]:
-    """search-down sends the Q3 question with web search forced to fail."""
-    if case.get("search_fail"):
-        q3 = next(row for row in cases if row.get("id") == "Q3")
-        return str(q3["query"]), True
-    return str(case["query"]), False
+def case_query(case: dict[str, Any], cases: list[dict[str, Any]]) -> str:
+    """The user prompt actually sent for one case."""
+    _ = cases
+    return str(case["query"])
 
 
 def case_prompts(path: Path | None = None) -> list[dict[str, str]]:
@@ -75,19 +72,16 @@ def case_prompts(path: Path | None = None) -> list[dict[str, str]]:
     cases = load_cases(path)
     prompts: list[dict[str, str]] = []
     for case in cases:
-        query, _search_fail = case_query(case, cases)
-        prompts.append({"id": str(case["id"]), "query": query})
+        prompts.append({"id": str(case["id"]), "query": case_query(case, cases)})
     return prompts
 
 
 def expected_tools(case: dict[str, Any], cases: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+    _ = cases
     if case.get("scope") == "IRRELEVANT":
         return set(), set(_WORK_TOOLS)
-    src = case
-    if case.get("search_fail"):
-        src = next(row for row in cases if row.get("id") == "Q3")
-    required = {str(name) for name in (src.get("required_tools") or [])}
-    forbidden = {str(name) for name in (src.get("forbidden_tools") or [])}
+    required = {str(name) for name in (case.get("required_tools") or [])}
+    forbidden = {str(name) for name in (case.get("forbidden_tools") or [])}
     return required, forbidden
 
 
@@ -167,7 +161,7 @@ def iter_gold(username: str, runs: int) -> Iterator[dict[str, Any]]:
 
     for case in cases:
         case_id = str(case["id"])
-        query, search_fail = case_query(case, cases)
+        query = case_query(case, cases)
         for run in range(1, runs + 1):
             yield {
                 "event": "status",
@@ -179,7 +173,7 @@ def iter_gold(username: str, runs: int) -> Iterator[dict[str, Any]]:
             }
             vault.save_session(user, base, eval_retry_used=False)
             try:
-                outcome = harness.run_task(user, query, search_fail=search_fail)
+                outcome = harness.run_task(user, query)
             except Exception as exc:
                 row = {
                     "ok": False,

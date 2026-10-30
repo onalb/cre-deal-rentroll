@@ -15,9 +15,9 @@ from cre_rentroll.turn_ctx import reset_turn
 
 def test_prediction_tool_is_on_the_book_menu():
     assert "ask_prediction_agent" in BOOK.tool_names
-    assert "ask_vacancy_agent" in BOOK.tool_names
+    assert "ask_vacancy_agent" not in BOOK.tool_names
     assert "ask_vacancy" not in BOOK.tool_names
-    assert TOOL_IMPLS["ask_prediction_agent"] is ask_prediction_agent
+    assert TOOL_IMPLS["ask_prediction_agent"].__wrapped__ is ask_prediction_agent
     source = inspect.getsource(ask_prediction_agent)
     assert "RR_PREDICT_URL" not in source
     assert "def forecast" not in source
@@ -146,6 +146,36 @@ def test_untrained_gateway_reply_is_the_book_answer(monkeypatch):
     assert "50 percent" not in (outcome.text or "")
 
 
+def test_rate_limit_after_predictor_quotes_vacancy_text(monkeypatch):
+    from cre_rentroll.agents import RATE_LIMIT_TEXT, RateLimitedError
+
+    reset_predict_state()
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
+    roll = _predict_roll()
+    _stub_book_run(monkeypatch, roll)
+    vacancy = "Bay View Gardens Apartments is not trained. No properties are trained yet."
+    fake, _seen = _gateway_answers([vacancy])
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
+
+    def fake_agent(*_a, **_k):
+        ask_prediction_agent(12, "What's the predicted vacancy for Bay View Gardens Apartments?")
+        raise RateLimitedError()
+
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    token = bind(lambda *_a, **_k: None)
+    try:
+        outcome = run_task(
+            "tester",
+            "What's the predicted vacancy for Bay View Gardens Apartments?",
+            skip_scope=True,
+            chip_id="predict_occupancy_only",
+        )
+    finally:
+        reset(token)
+    assert vacancy in (outcome.text or "")
+    assert RATE_LIMIT_TEXT not in (outcome.text or "")
+
+
 def test_followup_forwards_the_user_text(monkeypatch):
     reset_predict_state()
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
@@ -180,6 +210,41 @@ def test_followup_forwards_the_user_text(monkeypatch):
     assert seen[1]["arguments"]["question"] == "Plan A"
     assert seen[1]["name"] == "ask_prediction_agent"
     assert "0.11" in (second.text or "")
+
+
+def test_digit_followup_skips_oos_and_calls_predictor(monkeypatch):
+    from cre_rentroll.predict_followup import note_awaiting_followup
+
+    reset_predict_state()
+    note_awaiting_followup("tester", True)
+    roll = _predict_roll()
+    _stub_book_run(monkeypatch, roll)
+    occupancy = "Predicted occupancy for 1x1 renovated = 0 is 18.2% as of 2024-06-01."
+    fake, seen = _gateway_answers([occupancy])
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
+    captured: dict = {}
+
+    def boom_scope(*_a, **_k):
+        raise AssertionError("scope hop must not run on a prediction follow-up")
+
+    def fake_agent(_prompt, inv, _facts):
+        captured["tools"] = inv.tool_names
+        payload = json.loads(ask_prediction_agent(12, "0"))
+        return payload["answer"]
+
+    monkeypatch.setattr("cre_rentroll.harness.classify_scope", boom_scope)
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    token = bind(lambda *_a, **_k: None)
+    try:
+        outcome = run_task("tester", "0")
+    finally:
+        reset(token)
+        reset_predict_state()
+    assert "ask_prediction_agent" in captured["tools"]
+    assert "create_plan" not in captured["tools"]
+    assert seen[0]["arguments"]["question"] == "0"
+    assert "18.2%" in (outcome.text or "")
+    assert "create_plan" not in (outcome.text or "").lower()
 
 
 def test_same_turn_second_ask_does_not_post(monkeypatch):

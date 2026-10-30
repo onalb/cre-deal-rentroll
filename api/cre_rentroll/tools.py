@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -60,7 +61,6 @@ VAULT_TOOL_NAMES = frozenset(
 WORK_TOOL_NAMES = frozenset(
     {
         *VAULT_TOOL_NAMES,
-        "ask_vacancy_agent",
         "ask_prediction_agent",
         "osm_geocode",
         "web_search",
@@ -77,7 +77,7 @@ _LIST_UNITS_RE = re.compile(
     re.I,
 )
 _NON_HEADLINE_TOOLS_RE = re.compile(
-    r"\b(compute_income|compute_noi|compute_cap_rate|ask_vacancy_agent|ask_vacancy|ask_prediction_agent|osm_geocode|web_search|"
+    r"\b(compute_income|compute_noi|compute_cap_rate|ask_vacancy|ask_prediction_agent|osm_geocode|web_search|"
     r"score_gcr|reflection)\b",
     re.I,
 )
@@ -275,61 +275,7 @@ def _task_key(text: str) -> str:
     return _norm_task_text(text).lower()
 
 
-def _is_search_task(text: str) -> bool:
-    low = (text or "").lower()
-    if "web_search" in low:
-        return True
-    return bool(re.search(r"\bsearch\b", low))
-
-
-def web_search_failed(traces: list[dict[str, Any]] | None = None) -> bool:
-    rows = traces if traces is not None else turn_ctx.traces()
-    for row in rows or []:
-        if row.get("name") != "web_search":
-            continue
-        result = row.get("result")
-        if isinstance(result, dict) and result.get("ok") is False:
-            return True
-        blob = str(result or "").lower()
-        if "forced failure" in blob or "search-down" in blob:
-            return True
-    return False
-
-
-def _mark_search_incomplete(previous: list[dict[str, str]]) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for it in previous:
-        if it.get("status") not in _TERMINAL_STATUSES and _is_search_task(it.get("text") or ""):
-            out.append({"text": it["text"], "status": "incomplete"})
-        else:
-            out.append({"text": it["text"], "status": it["status"]})
-    return out
-
-
 _TERMINAL_STATUSES = frozenset({"completed", "incomplete"})
-
-
-def merge_replan_checklist(
-    previous: list[dict[str, str]], incoming: list[dict[str, str]]
-) -> list[dict[str, str]]:
-    """Keep completed/incomplete rows; append new work. Do not reset done items."""
-    kept = [
-        {"text": it["text"], "status": it["status"]}
-        for it in previous
-        if it.get("status") in _TERMINAL_STATUSES
-    ]
-    seen = {_task_key(it["text"]) for it in kept}
-    added: list[dict[str, str]] = []
-    for it in incoming:
-        key = _task_key(it["text"])
-        if not key or key in seen:
-            continue
-        status = it.get("status") or "pending"
-        if status in _TERMINAL_STATUSES:
-            status = "pending"
-        added.append({"text": it["text"], "status": status})
-        seen.add(key)
-    return kept + added
 
 
 def apply_status_updates(
@@ -562,14 +508,6 @@ def plan_log_message(items: list[dict[str, str]], diff: dict[str, Any], *, tool:
     return f"{tool} — checklist updated ({delta})\n{body}"
 
 
-_SEARCH_DOWN_MODEL = (
-    "Search already failed (unavailable). Marked search [incomplete]. "
-    "Do not call web_search again. Write your own user-facing sentence, then "
-    "score_gcr that sentence. Mention cap rates / comps / metro news only if "
-    "the user asked for those. Do not copy this tool result to the user."
-)
-
-
 def _last_work_observation() -> tuple[str, str]:
     """Last real work tool this turn, and ok or error. Empty when none has run."""
     tool = ""
@@ -580,10 +518,7 @@ def _last_work_observation() -> tuple[str, str]:
             continue
         tool = name
         result = row.get("result")
-        blob = str(result or "").lower()
-        if (isinstance(result, dict) and result.get("ok") is False) or (
-            "forced failure" in blob or "search-down" in blob
-        ):
+        if isinstance(result, dict) and result.get("ok") is False:
             status = "error"
         else:
             status = "ok"
@@ -603,13 +538,6 @@ def _deal_consecutive_hint(body: dict[str, Any]) -> str:
 def _deal_reflection_text(body: dict[str, Any]) -> str:
     text = str(body.get("analysis") or "").strip()
     if body.get("need_replan"):
-        if web_search_failed():
-            return (
-                "Search already failed (unavailable). Do not call web_search again. "
-                "Mark the search item [incomplete], then write your own sentence and "
-                "score_gcr that sentence. Mention cap rates / comps / metro news only "
-                "if the user asked for those. Do not copy this tool result to the user."
-            )
         from cre_rentroll.eval_service import (
             ask_is_conceptual,
             ask_is_market_area,
@@ -631,8 +559,6 @@ def _deal_model_text(name: str, body: dict[str, Any]) -> str:
     reason = str(body.get("reason") or "")
     if name == "reflection":
         return _deal_reflection_text(body)
-    if reason == "search_down":
-        return _SEARCH_DOWN_MODEL
     if reason == "consecutive_status":
         hint = _deal_consecutive_hint(body)
         plan = str(body.get("plan") or "")
@@ -764,7 +690,10 @@ def update_plan(tasks: str) -> str:
 
     WHEN NOT: After a successful vault/search/geocode hit just to mark
     [completed] — that is update_plan_status. Do not use this as the first tool
-    (create_plan first). Weather / identity / greetings / chitchat: no plan tools.
+    in a normal turn (create_plan first) — but in a PLANLESS turn (no
+    create_plan on the menu) this IS the escape hatch: call it with the new
+    numbered list to seed the checklist, then the extra work tool.
+    Weather / identity / greetings / chitchat: no plan tools.
 
     What: `tasks` is a numbered checklist of new work (same shape as create_plan).
     How: Keeps existing [completed] and [incomplete] rows, then appends the new
@@ -868,7 +797,6 @@ def _capability(name: str, arguments: dict[str, Any]) -> str:
         "compute_income",
         "compute_noi",
         "compute_cap_rate",
-        "ask_vacancy_agent",
     }:
         try:
             from cre_rentroll.vault import load_roll
@@ -883,16 +811,11 @@ def _capability(name: str, arguments: dict[str, Any]) -> str:
         "compute_income",
         "compute_noi",
         "compute_cap_rate",
-        "ask_vacancy_agent",
         "ask_prediction_agent",
     }:
         asked = turn_ctx.asked_as_of()
         if asked:
             remote_args["as_of"] = asked
-    if name == "web_search" and (
-        turn_ctx.search_should_fail() or os.environ.get("CRE_FORCE_SEARCH_FAIL") == "1"
-    ):
-        remote_args["force_fail"] = True
     if name == "ask_prediction_agent" and not str(remote_args.get("question") or "").strip():
         remote_args["question"] = (turn_ctx.eval_query() or "").strip()
     try:
@@ -1059,11 +982,11 @@ def score_gcr(draft: str) -> str:
     occupancy numbers. Locate / map / last-pin country or place correction is
     on-topic locate: a cited osm_geocode/map sentence is the payload — do not
     score G=1 off-topic or hide it. Do not require occupancy numbers.
-    If the last ask_prediction_agent result is a clarifying question (which
-    group/plan/variant, untrained / list trained buildings, or need a named
-    building), quoting that reply is the complete payload for THIS turn — do
-    not ding C for omitting occupancy_pct / in_place_monthly, and do not
-    substitute query_units occupancy.
+    If the last ask_prediction_agent result is present, quoting that vacancy
+    reply is the complete payload for THIS turn (predicted rate or instructions
+    to the user). Do not ding C for omitting occupancy_pct / in_place_monthly,
+    and do not substitute query_units occupancy. Set instructional true when
+    that reply asks the user to act before a score can be given.
     vault_calc N/A (a cited
     number not in the vault allowlist, including derived math) is not a fail. Conceptual
     CRE definitions and area/market drafts do not need occupancy/income/unit figures. Do not return to the user
@@ -1104,6 +1027,10 @@ def score_gcr(draft: str) -> str:
             scores.G = max(scores.G, 4)
         if isinstance(scores.R, int):
             scores.R = max(scores.R, 4)
+        if scores.instructional is not None:
+            from cre_rentroll.predict_followup import note_awaiting_followup
+
+            note_awaiting_followup(turn_ctx.username(), bool(scores.instructional))
     g = scores.G or 0
     c = scores.request_C or 0
     hits = (
@@ -1145,43 +1072,31 @@ def score_gcr(draft: str) -> str:
     return json.dumps(payload)
 
 
-def ask_vacancy_agent(floor_plan: str | None = None) -> str:
-    """Ask the capabilities gateway for the probability a floor plan is vacant.
-
-    When: the user asks which floor plan is more likely vacant, or the
-    probability a unit type is vacant. A headcount of vacant units is
-    query_units, not this tool.
-    What: optional floor_plan — one plan name. Omit to score every plan.
-    How: POST the one MCP tool ask_vacancy_agent.
-    The gateway fits a logistic regression on this building's vault roll and
-    returns a probability per plan. No tenant names. Cite those probabilities.
-    Do not estimate rent here. This does not call the vacancy app.
-    If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
-    gateway is required.
-    """
-    return _capability("ask_vacancy_agent", {"floor_plan": floor_plan})
-
-
 def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
-    """Call the capabilities gateway ask_prediction_agent for a forward outlook.
+    """Call the capabilities gateway ask_prediction_agent for a forward outlook
+    or floor-plan vacancy probability.
 
     When: forecast occupancy, lease expirations, MTM waterfall, rollover,
-    loss-to-lease, or predicted income. Also when THIS message is a plan
-    name or renovated yes/no after that agent asked which group.
+    loss-to-lease, or predicted income — also which floor plan is more
+    likely vacant on this roll, or the probability a unit type is vacant.
+    Also when THIS message is a plan name or renovated yes/no after that
+    agent asked which group.
     When not: current occupancy or in-place rent (query_units / compute_income),
-    floor-plan vacant probability (ask_vacancy_agent), map, weather.
+    map, weather.
     How: POST the one MCP tool ask_prediction_agent with
     this call's horizon_months and question. The gateway forwards to the vacancy
-    app MCP ask_vacancy. Pass THIS user question. Do not invent a building.
-    Never upload or train. If the gateway says the building is not trained or
-    asks which plan, quote that text and stop this turn — do not call again
-    with a guessed plan.
+    app MCP ask_vacancy and attaches this deal's vault-roll plan table
+    server-side, so the vacancy agent fits it transiently (never saved).
+    Pass THIS user question. Do not invent a building.
+    Never upload or train. Quote the vacancy agent's answer (predicted rate or
+    instructions to the user) and stop this turn — do not call again with a
+    guessed plan.
     If CAPABILITIES_GATEWAY_URL is unset, returns an error that the capabilities
     gateway is required.
     """
-    from cre_rentroll.predict_followup import this_turn_clarify_result
+    from cre_rentroll.predict_followup import this_turn_predictor_result
 
-    prior = this_turn_clarify_result()
+    prior = this_turn_predictor_result()
     if prior:
         payload = {
             "ok": True,
@@ -1196,18 +1111,48 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
     )
 
 
+def _planless_guard(name: str, fn: Any) -> Any:
+    """Planless turns run one routed work tool. A different work tool is
+    rejected until update_plan seeds a checklist — same reject-then-hint
+    shape as the consecutive update_plan_status guard. Same-tool repeats
+    stay allowed (e.g. a filtered query_units after an unfiltered one)."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        routed = turn_ctx.planless()
+        if (
+            routed
+            and name in WORK_TOOL_NAMES
+            and name != routed
+            and not turn_ctx.checklist()
+        ):
+            err = {
+                "ok": False,
+                "rejected": True,
+                "error": (
+                    f"Planless turn — this ask was routed to {routed} only. "
+                    f"{name} is extra work: call update_plan with the NEW "
+                    "numbered remaining list first, then this tool."
+                ),
+            }
+            turn_ctx.record(name, dict(kwargs), err)
+            return json.dumps(err)
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
 TOOL_IMPLS: dict[str, Any] = {
     "create_plan": create_plan,
     "update_plan": update_plan,
     "update_plan_status": update_plan_status,
     "reflection": reflection,
     "score_gcr": score_gcr,
-    "query_units": query_units,
-    "compute_income": compute_income,
-    "compute_noi": compute_noi,
-    "compute_cap_rate": compute_cap_rate,
-    "osm_geocode": osm_geocode,
-    "web_search": web_search,
-    "ask_vacancy_agent": ask_vacancy_agent,
-    "ask_prediction_agent": ask_prediction_agent,
+    "query_units": _planless_guard("query_units", query_units),
+    "compute_income": _planless_guard("compute_income", compute_income),
+    "compute_noi": _planless_guard("compute_noi", compute_noi),
+    "compute_cap_rate": _planless_guard("compute_cap_rate", compute_cap_rate),
+    "osm_geocode": _planless_guard("osm_geocode", osm_geocode),
+    "web_search": _planless_guard("web_search", web_search),
+    "ask_prediction_agent": _planless_guard("ask_prediction_agent", ask_prediction_agent),
 }

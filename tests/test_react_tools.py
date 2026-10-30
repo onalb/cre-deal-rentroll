@@ -490,7 +490,10 @@ def test_harness_inventory_emit_is_not_step_plan(monkeypatch):
     inv_msgs = [row["message"] for row in seen if row["step"] == "inventory"]
     plan_rows = [row for row in seen if row["step"] == "plan"]
     skill_rows = [row for row in seen if row["step"] == "skills"]
-    assert any("full tool menu" in m and "book" in m and "query_units" in m for m in inv_msgs)
+    assert any(
+        "query_units" in m and ("full tool menu" in m or "planless menu" in m)
+        for m in inv_msgs
+    )
     assert not any("RollAbstractor" in m for m in inv_msgs)
     assert not any("(LLM)" in m for m in inv_msgs)
     assert len(skill_rows) == 1
@@ -677,8 +680,9 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "buy" in has and "worth" in has
     assert "in-scope underwriting" in has
     assert "never emit" in has and "out-of-scope refuse" in has
-    assert "answers questions about the property, the deal, or the area it sits in" in has
+    assert "property, the deal, or the area it sits in" in has
     assert "personal chat" in has
+    assert "own words" in has
     assert "[incomplete]" in has
     assert "do not refuse" in has
     assert "never copy (skill)" in has

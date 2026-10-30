@@ -40,9 +40,10 @@ services:
       AWS_SDK_LOAD_CONFIG: "1"
       GOLD_EVAL_XLSX: /app/gold_eval/gold/lacordoba.xlsx
       GOLD_EVAL_CASES: /app/gold_eval/gold.json
-      # Skills HTTP. Tool calls use the one AgentCore MCP as the deal identity.
+      # Skills HTTP. Local tool calls hit the local gateway (override MCP_URL
+      # to the AgentCore URL when you want the deployed target).
       CAPABILITIES_GATEWAY_URL: http://host.docker.internal:8010
-      MCP_URL: https://credealrentroll-25yvwacjrd.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+      MCP_URL: ${MCP_URL:-http://host.docker.internal:8010/mcp}
       MCP_CALLER_ROLE_ARN: arn:aws:iam::226721156429:role/CreDealRentrollWli
       # Blank runs cre_rentroll.score_gcr_lambda.handler in this API process.
       SCORE_GCR_LAMBDA_ARN: ${SCORE_GCR_LAMBDA_ARN:-}
