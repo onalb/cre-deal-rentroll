@@ -531,6 +531,92 @@ def test_harness_judge_failure_is_eval_error(monkeypatch):
     assert not any(row["step"] == "retry" for row in seen)
 
 
+def test_tool_failure_reason_is_the_bubble(monkeypatch):
+    """A failed tool with an explanation is the chat text. A scored reject stays canned."""
+    from cre_rentroll.tools import score_gcr
+    from cre_rentroll.turn_ctx import record
+
+    explanation = (
+        "I'm currently unable to provide an occupancy prediction for Bay View "
+        "Gardens Apartments due to repeated internal errors with the forecasting tool. "
+        "Please try asking again later."
+    )
+    seen: list[dict] = []
+    token = bind(seen.append)
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+
+    def fake_agent(*_a, **_k):
+        record(
+            "ask_prediction_agent",
+            {"question": "What occupancy do you predict for Bay View Gardens Apartments?"},
+            {"ok": False, "error": "An internal error occurred. Please retry later."},
+        )
+        score_gcr(explanation)
+        return explanation
+
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
+    monkeypatch.setattr(
+        "cre_rentroll.eval_service.live_judge",
+        lambda *a, **k: EvalScores(judge="empty", reason="draft missing CRE payload"),
+    )
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+    try:
+        outcome = run_task(
+            "tester",
+            "What occupancy do you predict for Bay View Gardens Apartments?",
+            skip_scope=True,
+        )
+    finally:
+        reset(token)
+
+    assert outcome.kind == "error"
+    assert outcome.stop_reason == "eval_error"
+    assert outcome.eval is not None
+    assert outcome.eval.judge == "empty"
+    assert "forecasting tool" in (outcome.text or "")
+    assert "Bay View" in (outcome.text or "")
+    assert "could not finish that answer this turn" not in (outcome.text or "").lower()
+
+
+def test_tool_failure_without_a_draft_shows_the_tool_error(monkeypatch):
+    from cre_rentroll.turn_ctx import record
+
+    seen: list[dict] = []
+    token = bind(seen.append)
+    monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
+
+    def fake_agent(*_a, **_k):
+        record(
+            "ask_prediction_agent",
+            {"question": "What occupancy do you predict?"},
+            {"ok": False, "error": "An internal error occurred. Please retry later."},
+        )
+        return ""
+
+    monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
+    monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
+    monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
+    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
+    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
+    try:
+        outcome = run_task("tester", "What occupancy do you predict?", skip_scope=True)
+    finally:
+        reset(token)
+
+    assert outcome.stop_reason == "eval_error"
+    assert outcome.text == "An internal error occurred. Please retry later."
+
+
 def test_create_plan_and_reflection_messages_tagged_llm_not_compute_income():
     seen = []
     token = bind(seen.append)

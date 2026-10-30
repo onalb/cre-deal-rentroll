@@ -70,6 +70,12 @@
           "iam:PassedToService": "bedrock-agentcore.amazonaws.com"
         }
       }
+    },
+    {
+      "Sid": "PassAppRunnerAccessRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::226721156429:role/cre-deal-rentroll-AccessRole-CORLaWnO9wVE"
     }
   ]
 }

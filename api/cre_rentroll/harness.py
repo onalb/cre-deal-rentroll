@@ -520,6 +520,57 @@ def _ensure_score_gcr(draft: str) -> None:
     score_gcr(prose)
 
 
+_CANNED_FINISH = (
+    "I could not finish that answer this turn. "
+    "Please send the question again."
+)
+
+
+def _last_tool_error(traces: list[dict[str, Any]]) -> str:
+    """Last failed work-tool error that is safe to show in the chat bubble."""
+    for row in reversed(traces or []):
+        result = row.get("result")
+        if not isinstance(result, dict) or result.get("ok") is not False:
+            continue
+        err = " ".join(str(result.get("error") or "").split())
+        if not err or is_operator_leak(err):
+            continue
+        low = err.lower()
+        if (
+            "traceback" in low
+            or "call update_plan" in low
+            or low.startswith("planless turn")
+        ):
+            continue
+        if len(err) > 400:
+            err = err[:400].rstrip() + "…"
+        return err
+    return ""
+
+
+def _failure_bubble(
+    draft: str, traces: list[dict[str, Any]], scores: EvalScores
+) -> str:
+    """Why this turn failed, when a tool said so. Empty keeps the canned line.
+
+    A judge that scored the draft (low G/C, off-topic) still hides that draft.
+    A tool failure with no score shows the model's explanation, or the tool error.
+    """
+    if (scores.judge or "") == "llm":
+        return ""
+    tool_err = _last_tool_error(traces)
+    if not tool_err:
+        return ""
+    explanation = strip_operator_echo(answer_prose(draft))
+    low = (explanation or "").lower()
+    canned = "i could not finish that answer this turn" in low or (
+        "i could not produce a rent-roll answer this turn" in low
+    )
+    if explanation and not canned and not is_operator_leak(explanation):
+        return explanation
+    return tool_err
+
+
 def _eval_and_stop(
     username: str,
     message: str,
@@ -585,11 +636,8 @@ def _eval_and_stop(
     if decision == "error":
         stop = "eval_error"
         kind = "error"
-        # Never show a G/C/R fail, judge error, or unrecovered need_replan as the bubble.
-        show = (
-            "I could not finish that answer this turn. "
-            "Please send the question again."
-        )
+        # A scored G/C/R fail stays canned. A tool failure shows its reason.
+        show = _failure_bubble(draft, traces, scores) or _CANNED_FINISH
     elif decision == "warn":
         kind = "warning"
         stop = "eval_warn"

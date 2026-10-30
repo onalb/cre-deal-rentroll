@@ -1085,8 +1085,9 @@ def ask_prediction_agent(horizon_months: int = 12, question: str = "") -> str:
     map, weather.
     How: POST the one MCP tool ask_prediction_agent with
     this call's horizon_months and question. The gateway forwards to the vacancy
-    app MCP ask_vacancy and attaches this deal's vault-roll plan table
-    server-side, so the vacancy agent fits it transiently (never saved).
+    app MCP ask_vacancy. The vacancy app answers from its trained store only,
+    same as its own UI — a building with no saved fit gets its not-trained
+    reply listing trained properties.
     Pass THIS user question. Do not invent a building.
     Never upload or train. Quote the vacancy agent's answer (predicted rate or
     instructions to the user) and stop this turn — do not call again with a
