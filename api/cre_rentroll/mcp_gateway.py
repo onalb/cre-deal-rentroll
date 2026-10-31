@@ -74,6 +74,8 @@ def _credentials():
 
 
 def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
+    """It builds the POST from the body you pass in, stamps X-MCP-Role
+     so the gateway can filter tools/list, then branches on the URL."""
     from botocore.auth import SigV4Auth
     from botocore.awsrequest import AWSRequest
     from botocore.credentials import Credentials
@@ -82,8 +84,10 @@ def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
     if not url:
         raise RuntimeError("MCP_URL is not set")
     data = json.dumps(body).encode("utf-8")
+    # Role the gateway uses to filter tools/list.
     headers = {**_MCP_HEADERS, "X-MCP-Role": mcp_role()}
     if _is_agentcore(url):
+        # Assume the deal role, then sign the exact bytes we will send.
         raw = _credentials()
         creds = Credentials(raw["AccessKeyId"], raw["SecretAccessKey"], raw["SessionToken"])
         request = AWSRequest(method="POST", url=url, data=data, headers=headers)
@@ -104,6 +108,7 @@ def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
             timeout=timeout,
             follow_redirects=False,
         )
+    # A redirect would drop the signature or land on a different host.
     if response.status_code in {301, 302, 303, 307, 308}:
         raise RuntimeError(f"MCP URL redirected ({response.status_code}); refusing to follow")
     if response.status_code >= 400:
@@ -111,6 +116,7 @@ def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
     text = (response.text or "").strip()
     if not text:
         return {}
+    # AgentCore may answer as SSE; the JSON-RPC object is on the data: line.
     if text.startswith("event:") or "data:" in text.splitlines()[0]:
         for line in text.splitlines():
             if line.startswith("data:"):
