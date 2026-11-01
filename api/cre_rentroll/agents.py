@@ -676,9 +676,12 @@ def _emit_react_turn(
     args_note: str = "",
     stop: str | None = None,
 ) -> None:
+    turn_ctx.note_react_turn(n)
     names = [str(x) for x in (tool_names or []) if x]
+    already = {str(row.get("name") or "") for row in turn_ctx.traces()}
     if names:
-        msg = f"ReAct turn {n} — {', '.join(names)}"
+        bits = [f"{name} follow-up" if name in already else name for name in names]
+        msg = f"ReAct turn {n} — {', '.join(bits)}"
         if args_note:
             msg += f" {args_note}"
     else:
@@ -950,7 +953,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
         # starves ReAct (limit_turns, zero tools). G/C/R is score_gcr in-loop.
         bind_turn_context()
         try:
-            return agent(prompt, limits={"turns": 12})
+            return agent(prompt, limits={"turns": turn_ctx.REACT_TURN_LIMIT})
         except PredictClarifyStop as exc:
             return str(exc) or ""
         finally:
@@ -1002,7 +1005,7 @@ def _run_openai_tools_loop(
     import json
 
     react_text = ""
-    for turn_i in range(1, 13):
+    for turn_i in range(1, turn_ctx.REACT_TURN_LIMIT + 1):
         try:
             create_kw: dict[str, Any] = {"model": model, "messages": messages}
             if spec:
@@ -1079,7 +1082,7 @@ def _run_openai_tools_loop(
             react_text = quoted
             break
     else:
-        react_text = "Stopped: max_steps (12)."
+        react_text = f"Stopped: max_steps ({turn_ctx.REACT_TURN_LIMIT})."
     return react_text
 
 

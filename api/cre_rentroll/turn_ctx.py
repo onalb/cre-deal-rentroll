@@ -20,6 +20,10 @@ _checklist: ContextVar[list[dict[str, str]]] = ContextVar("cre_checklist", defau
 _eval_scores: ContextVar[Any] = ContextVar("cre_eval_scores", default=None)
 _eval_query: ContextVar[str | None] = ContextVar("cre_eval_query", default=None)
 _ack_prefix: ContextVar[str | None] = ContextVar("cre_ack_prefix", default=None)
+_react_turn: ContextVar[int] = ContextVar("cre_react_turn", default=0)
+
+# Strands agent() and the OpenAI fallback both stop after this many model turns.
+REACT_TURN_LIMIT = 12
 
 
 def reset_turn(
@@ -38,6 +42,7 @@ def reset_turn(
     _eval_scores.set({"value": None})
     _eval_query.set(None)
     _ack_prefix.set(None)
+    _react_turn.set(0)
     if not keep_run:
         _run_t0.set(time.time())
         _retry_n.set(0)
@@ -136,6 +141,15 @@ def add_llm_if_unchanged(kind: str, before: int) -> None:
     """
     if llm_call_kinds().count(kind) == before:
         add_llm(kind)
+
+
+def note_react_turn(n: int) -> None:
+    """Last numbered ReAct model turn this user message (not the judge call)."""
+    _react_turn.set(int(n))
+
+
+def react_turn() -> int:
+    return int(_react_turn.get() or 0)
 
 
 def llm_call_count() -> int:
@@ -273,6 +287,7 @@ def record(name: str, args: dict[str, Any], result: Any) -> None:
     bucket = _traces.get()
     if bucket is None:
         return
+    followup = any(str(row.get("name") or "") == name for row in bucket)
     bucket.append({"name": name, "args": args, "result": result})
     from cre_rentroll.reflect import on_tool_error
     from cre_rentroll.run_events import emit, tool_message
@@ -284,7 +299,8 @@ def record(name: str, args: dict[str, Any], result: Any) -> None:
         "reflection",
         "score_gcr",
     }
-    emit("tool", tool_message(name, args, result), tool=name, llm=from_model)
+    line = tool_message(name, args, result, followup=followup)
+    emit("tool", line, tool=name, llm=from_model, followup=followup or None)
     if name in {"create_plan", "update_plan", "update_plan_status"}:
         note_llm_kind(name)
         changed = True
@@ -293,10 +309,10 @@ def record(name: str, args: dict[str, Any], result: Any) -> None:
             changed = result.get("changed", True)
             log = str(result.get("log") or "")
         if changed or log:
-            emit("plan", log or tool_message(name, args, result), tool=name, llm=True)
+            emit("plan", log or line, tool=name, llm=True)
     elif name == "reflection":
         note_llm_kind("reflection")
-        emit("reflect", tool_message(name, args, result), tool=name, llm=True)
+        emit("reflect", line, tool=name, llm=True)
         need = bool((args or {}).get("need_replan"))
         if isinstance(result, dict):
             need = need or bool(result.get("need_replan"))

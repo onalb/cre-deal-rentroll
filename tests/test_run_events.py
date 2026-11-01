@@ -19,6 +19,7 @@ from cre_rentroll.turn_ctx import (
     llm_call_kinds,
     llm_usage,
     parse_openai_usage,
+    note_react_turn,
     record,
     reset_turn,
     set_checklist,
@@ -290,6 +291,29 @@ def test_failed_tool_emits_error_and_replan():
     assert "replan" in steps
     assert any("Continue without looping" in (row.get("message") or "") for row in seen)
     assert any("web_search (MCP)" in (row.get("message") or "") for row in seen)
+    assert not any("follow-up" in (row.get("message") or "") for row in seen)
+
+
+def test_repeat_tool_call_is_logged_as_followup():
+    seen = []
+    token = bind(seen.append)
+    reset_turn("tester")
+    try:
+        record("web_search", {"query": "Bay View"}, {"ok": True, "results": [{}, {}]})
+        record(
+            "web_search",
+            {"query": "average property value"},
+            {"ok": False, "error": "No results found"},
+        )
+        record("query_units", {}, {"unit_count": 250, "occupied_count": 235, "vacant_count": 15})
+    finally:
+        reset(token)
+    tools = [row["message"] for row in seen if row["step"] == "tool"]
+    assert tools[0].startswith("web_search (MCP) →")
+    assert "follow-up" not in tools[0]
+    assert tools[1].startswith("web_search (MCP) follow-up failed:")
+    assert tools[2].startswith("query_units (MCP) →")
+    assert "follow-up" not in tools[2]
 
 
 def test_stop_summary_counts_mcp_skills_retries():
@@ -314,6 +338,7 @@ def test_stop_summary_counts_mcp_skills_retries():
     assert steps[-2:] == ["stop", "summary"]
     msg = seen[-1]["message"]
     assert "0 LLM calls" in msg
+    assert "turn 0/12" in msg
     assert "2 MCP" in msg
     assert "query_units (MCP)" in msg
     assert "2 skills" in msg
@@ -339,6 +364,15 @@ def test_stop_summary_splits_openai_input_output_tokens():
         reset(token)
     msg = seen[-1]["message"]
     assert "in 1234 tok · out 567 tok" in msg
+    note_react_turn(11)
+    seen.clear()
+    token = bind(seen.append)
+    try:
+        emit_stop_and_summary("eval_ok", traces=[], retry_n=0, skills=[])
+    finally:
+        reset(token)
+    assert "turn 11/12" in seen[-1]["message"]
+    assert seen[-1]["data"]["react_turn"] == 11
     assert "~" not in msg.split("confidence")[0]
     data = seen[-1]["data"]
     assert data["tokens_in"] == 1234

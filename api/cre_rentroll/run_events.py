@@ -193,7 +193,7 @@ def emit_stop_and_summary(
     uniq_mcp = list(dict.fromkeys(mcp))
     uniq_skills = list(dict.fromkeys(skills or []))
     elapsed = max(0.0, time.time() - started) if started else 0.0
-    from cre_rentroll.turn_ctx import llm_token_summary
+    from cre_rentroll.turn_ctx import REACT_TURN_LIMIT, llm_token_summary, react_turn
 
     tok_bit, tok_in, tok_out = llm_token_summary()
     conf = _confidence_line(scores, reason)
@@ -202,8 +202,10 @@ def emit_stop_and_summary(
     if uniq_skills:
         skill_bit += f" ({', '.join(labeled(n) for n in uniq_skills)})"
     llm_bit, llm_n = llm_summary_bit()
+    turn_n = react_turn()
+    turn_bit = f"turn {turn_n}/{REACT_TURN_LIMIT}"
     line = (
-        f"{llm_bit} · {mcp_bit} · {skill_bit} · "
+        f"{llm_bit} · {turn_bit} · {mcp_bit} · {skill_bit} · "
         f"{retry_n} retr{'ies' if retry_n != 1 else 'y'} · "
         f"{tok_bit} · {elapsed:.1f}s · confidence {conf}"
     )
@@ -211,6 +213,7 @@ def emit_stop_and_summary(
         "summary",
         line,
         llm_calls=llm_n,
+        react_turn=turn_n,
         mcp=len(mcp),
         skills=len(uniq_skills),
         retries=retry_n,
@@ -341,9 +344,13 @@ def _prose_for_run_log(text: str, *, cap: int = _PROSE_LOG_MAX) -> str:
     return cut.rstrip() + "…"
 
 
-def tool_message(name: str, args: dict[str, Any], result: Any) -> str:
+def tool_message(
+    name: str, args: dict[str, Any], result: Any, *, followup: bool = False
+) -> str:
     r = result if isinstance(result, dict) else {}
     shown = labeled(name)
+    if followup:
+        shown = f"{shown} follow-up"
     if name == "query_units":
         return _query_units_log(shown, args or {}, r)
     if name == "compute_income":

@@ -101,6 +101,7 @@ def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
             follow_redirects=False,
         )
     else:
+        # Local capabilities gateway (and non-AgentCore test URLs) do not require SigV4.
         response = httpx.post(
             url,
             content=data,

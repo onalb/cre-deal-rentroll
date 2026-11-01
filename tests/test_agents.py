@@ -104,6 +104,21 @@ def test_emit_react_turn_suffix_prefers_in_progress_then_pending():
     assert " — for 2. [pending] Compute income for in-place monthly rent." in seen[1]["message"]
 
 
+def test_emit_react_turn_marks_repeat_as_followup():
+    reset_turn("tester")
+    record("web_search", {"query": "Bay View"}, {"ok": True, "results": [{}]})
+    seen: list[dict] = []
+    token = bind(seen.append)
+    try:
+        _emit_react_turn(6, ["web_search"], '{"query": "average property value"}', "tool_use")
+    finally:
+        reset(token)
+    msg = seen[0]["message"]
+    assert msg.startswith("ReAct turn 6 — web_search (MCP) follow-up ")
+    assert "average property value" in msg
+    assert "stop=tool_use" in msg
+
+
 def test_emit_react_turn_suffix_omits_meta_and_unmatched():
     reset_turn("tester")
     seen: list[dict] = []
