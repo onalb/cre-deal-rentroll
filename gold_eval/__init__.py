@@ -15,6 +15,7 @@ from gold_eval.runner import (
     tools_match,
     xlsx_candidates,
 )
+from gold_eval.score import place_hit, score_accuracy, score_tool_calls
 
 __all__ = [
     "MAX_RUNS",
@@ -25,8 +26,11 @@ __all__ = [
     "gold_cases_path",
     "iter_gold",
     "load_cases",
+    "place_hit",
     "resolve_xlsx",
+    "score_accuracy",
     "score_stats",
+    "score_tool_calls",
     "summarize",
     "tools_match",
     "xlsx_candidates",

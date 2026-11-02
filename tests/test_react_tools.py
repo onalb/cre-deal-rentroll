@@ -125,10 +125,10 @@ def test_agent_tool_impls_use_real_tool_schemas_not_args_kwargs():
 
 def test_strands_book_tools_schema_not_args_kwargs():
     pytest.importorskip("strands")
-    from cre_rentroll.agents import _strands_tools
+    from cre_rentroll.agents import _setup_tools_strands
 
     by_name = {}
-    for tool in _strands_tools(("create_plan", "query_units", "compute_income")):
+    for tool in _setup_tools_strands(("create_plan", "query_units", "compute_income")):
         spec = getattr(tool, "tool_spec", None)
         assert spec, tool
         by_name[spec["name"]] = spec["inputSchema"]["json"]
@@ -956,24 +956,18 @@ def test_vault_tools_post_to_deal_mcp_and_have_no_local_math(monkeypatch):
     assert "nominatim" not in code.lower()
 
 
-def test_avg_sqft_skill_and_gold_case():
+def test_avg_sqft_skill():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     gateway = root.parent / "capabilities-gateway" / "skills"
     abstract = (gateway / "rent-roll-abstract" / "SKILL.md").read_text(encoding="utf-8")
     cite = (gateway / "citation-policy" / "SKILL.md").read_text(encoding="utf-8")
-    gold = json.loads(
-        (root / "gold_eval" / "gold.json").read_text(encoding="utf-8")
-    )
     assert "avg_sqft" in abstract
     assert "does not specify square footage" in abstract
     assert "hand-average" in abstract
     assert "short bullet per asked item" in abstract
     assert "avg_sqft" in cite
-    case = next(c for c in gold["cases"] if c["id"] == "avg-sqft")
-    assert case["query"] == "whats the average sqft?"
-    assert "query_units" in case["required_tools"]
 
 
 def test_create_plan_three_needed_tools_are_three_items():

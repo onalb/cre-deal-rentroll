@@ -135,6 +135,7 @@ def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, A
     return last
 
 
+# Ingest an attachment when one is present, run the question, and return the chat payload.
 def _run_chat_sync(
     user: str,
     text: str,
@@ -165,6 +166,7 @@ def _run_chat_sync(
                 outcomes.append(ingest_outcome.model_dump())
     if text:
         outcomes.append(
+            # RUN Cycle Strands: STEP 2: Scope the question and start one agent run.
             harness.run_task(
                 user, text, has_attachment=attached, ack_prefix=ack
             ).model_dump()
@@ -220,6 +222,7 @@ async def chat(
     def work() -> None:
         token = run_events.bind(sink)
         try:
+            # RUN Cycle Strands: STEP 1: Run this chat message and return the answer payload.
             last = _run_chat_sync(user, text, attached, filename, raw)
             last["logs"] = collected
             q.put(("done", last))

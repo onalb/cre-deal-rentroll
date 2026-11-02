@@ -955,7 +955,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
         # starves ReAct (limit_turns, zero tools). G/C/R is score_gcr in-loop.
         bind_turn_context()
         try:
-            # RUN Cycle: STEP 7: Run the Strands think-act loop and return its result.
+            # RUN Cycle Strands: STEP 7: Run the Strands think-act loop and return its result.
             return agent(prompt, limits={"turns": turn_ctx.REACT_TURN_LIMIT})
         except PredictClarifyStop as exc:
             return str(exc) or ""
@@ -964,7 +964,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
 
     before = turn_ctx.llm_call_count()
     try:
-        # RUN Cycle: STEP 6: Run the loop on a worker thread and wait for it.
+        # RUN Cycle Strands: STEP 6: Run the loop on a worker thread and wait for it.
         result = _timed(_react)
     except FuturesTimeout as exc:
         raise RateLimitedError(
@@ -1293,5 +1293,5 @@ def run_agent(prompt: str, inv: Inventory, facts: str) -> str:
         import strands  # noqa: F401
     except ImportError:
         return run_openai_tools(prompt, inv, facts)
-    # RUN Cycle: STEP 5: Build the Strands agent and run its loop.
+    # RUN Cycle Strands: STEP 5: Build the Strands agent and run its loop.
     return run_strands(prompt, inv, facts)

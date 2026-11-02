@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from gold_eval.runner import MAX_RUNS, case_prompts, iter_gold
+from gold_eval.store import load_result, save_result
 
 router = APIRouter()
 
@@ -37,6 +38,15 @@ def eval_cases(x_username: str | None = Header(default=None)) -> list[dict[str, 
     return case_prompts()
 
 
+@router.get("/api/eval/result")
+def eval_result(x_username: str | None = Header(default=None)) -> dict[str, Any]:
+    user = _user(x_username)
+    found = load_result(user)
+    if not found:
+        return {"saved_at": "", "runs": 0, "status": "", "summary": [], "log": []}
+    return found
+
+
 @router.post("/api/eval/run")
 async def eval_run(body: EvalBody, x_username: str | None = Header(default=None)):
     user = _user(x_username)
@@ -45,9 +55,29 @@ async def eval_run(body: EvalBody, x_username: str | None = Header(default=None)
     q: queue.Queue[dict[str, Any] | None] = queue.Queue()
 
     def work() -> None:
+        log: list[dict[str, Any]] = []
+        summary: list[dict[str, Any]] = []
+        status = ""
         try:
             for event in iter_gold(user, body.runs):
                 q.put(event)
+                if event.get("event") == "run":
+                    log.append({k: v for k, v in event.items() if k != "summary"})
+                if isinstance(event.get("summary"), list):
+                    summary = event["summary"]
+                if event.get("message"):
+                    status = str(event["message"])
+            if log:
+                try:
+                    save_result(
+                        user,
+                        runs=body.runs,
+                        status=status,
+                        summary=summary,
+                        log=log,
+                    )
+                except Exception:
+                    q.put({"event": "status", "message": "Could not save this result."})
         except Exception as exc:
             q.put({"event": "error", "message": f"{type(exc).__name__}: {exc}"})
         finally:

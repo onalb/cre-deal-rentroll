@@ -41,6 +41,7 @@ def decompose(message: str, inventories: list[Inventory] | None = None) -> list[
     return [(inv, message)]
 
 
+# Start one Strands run and return the draft text.
 def _invoke_react(inv: Inventory, prompt: str, facts: str) -> str:
     """One Strands run_agent. Empty drafts go to eval as-is."""
     from cre_rentroll.agentcore_platform import note_harness_react
@@ -48,6 +49,7 @@ def _invoke_react(inv: Inventory, prompt: str, facts: str) -> str:
     note_harness_react()
     emit("llm", "Harness starting ReAct (LLM)")
     before_agent = turn_ctx.llm_call_kinds().count("agent")
+    # RUN Cycle Strands: STEP 4: Hand the prompt to the Strands agent.
     draft = run_agent(prompt, inv, facts)
     turn_ctx.add_llm_if_unchanged("agent", before_agent)
     emit(
@@ -216,6 +218,7 @@ def ingest_attachment(username: str, filename: str, raw: bytes, *, persist: bool
     )
 
 
+# Scope the message, build the prompt, run ReAct, and return the chat outcome.
 def run_task(
     username: str,
     message: str,
@@ -388,6 +391,7 @@ def run_task(
             llm_user, messages, planless=turn_ctx.planless(), cre_ask=cre_ask
         )
         try:
+            # RUN Cycle Strands: STEP 3: Call the agent and return its draft text.
             draft = _invoke_react(book_inv, prompt, facts)
         except RateLimitedError as exc:
             quoted = quoted_prediction_clarification(traces)

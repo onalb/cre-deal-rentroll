@@ -373,7 +373,48 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .eval-table th, .eval-table td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line); }
 .eval-table th { color: var(--muted); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; }
 .eval-log { margin: 1rem 0 0; padding-left: 1.2rem; color: var(--ink); }
-.eval-log li { margin: 0.35rem 0; }
+.eval-log li { margin: 0.55rem 0; }
+button.run-name {
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+button.run-name:hover,
+button.run-name[aria-expanded="true"] {
+  color: var(--accent);
+}
+.run-record {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.45rem 0 0.8rem;
+  font-size: 0.88rem;
+}
+.run-record th, .run-record td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.run-record th {
+  width: 7.5rem;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.run-record pre {
+  margin: 0;
+  white-space: pre-wrap;
+  max-height: 16rem;
+  overflow: auto;
+  font-size: 0.78rem;
+}
 .eval-table td.case-open { position: relative; z-index: 3; }
 .case-anchor { position: relative; display: inline-block; }
 button.case-name {

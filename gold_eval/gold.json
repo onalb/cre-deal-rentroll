@@ -3,31 +3,21 @@
     {
       "id": "Q1",
       "query": "Abstract this rent roll: unit count, occupancy, in-place monthly income, vacant count, MTM if present. Cite computed totals. Do not geocode or search.",
-      "required_tools": ["query_units", "compute_income"],
-      "forbidden_tools": ["osm_geocode", "web_search"]
+      "best_calls": {"query_units": 1, "compute_income": 1},
+      "forbidden_tools": ["osm_geocode", "web_search"],
+      "expect": {
+        "from_roll": ["unit_count", "occupancy_pct", "in_place_monthly", "vacant_count", "mtm_count"]
+      }
     },
     {
-      "id": "Q2",
-      "query": "Locate this property on the map. If metadata has a suggested address, geocode it.",
-      "required_tools": ["osm_geocode"],
-      "forbidden_tools": ["compute_cap_rate"]
-    },
-    {
-      "id": "Q3",
-      "query": "Annualize in-place income. Search recent multifamily cap-rate news for this city.",
-      "required_tools": ["web_search"],
-      "forbidden_tools": ["osm_geocode"]
-    },
-    {
-      "id": "weather",
-      "query": "What's the weather this weekend?",
-      "scope": "IRRELEVANT"
-    },
-    {
-      "id": "avg-sqft",
-      "query": "whats the average sqft?",
-      "required_tools": ["query_units"],
-      "forbidden_tools": ["web_search", "osm_geocode", "compute_income"]
+      "id": "Multi-1",
+      "query": "Where is this property? Can you put it on a map, and how many units are vacant, and what is occupancy?",
+      "best_calls": {"query_units": 1, "osm_geocode": 1},
+      "forbidden_tools": ["web_search", "compute_income", "compute_noi", "compute_cap_rate", "ask_prediction_agent"],
+      "expect": {
+        "from_roll": ["vacant_count", "occupancy_pct"],
+        "place_from": "suggested_address"
+      }
     }
   ]
 }

@@ -2,18 +2,62 @@ import { useEffect, useRef, useState } from "react";
 
 const FILE_NAME = "La Cordoba Rent Roll 04-20-21 (2) 164.xlsx";
 
-function fmt(stats) {
+function meanStd(stats) {
   if (!stats || stats.n === 0 || stats.mean == null) return "—";
-  return Number(stats.mean).toFixed(2);
-}
-
-function fmtStd(stats) {
-  if (!stats || stats.n === 0 || stats.stdev == null) return "—";
-  return Number(stats.stdev).toFixed(2);
+  const sd = stats.stdev == null ? 0 : Number(stats.stdev);
+  return `${Number(stats.mean).toFixed(2)} ±${sd.toFixed(2)}`;
 }
 
 function scoreText(value) {
   return value == null ? "—" : String(value);
+}
+
+function ratio(passed, runs) {
+  if (!runs) return "—";
+  return `${passed ?? 0}/${runs}`;
+}
+
+function accuracyText(value) {
+  if (value === true) return "pass";
+  if (value === false) return "miss";
+  return "—";
+}
+
+function toolRatio(row) {
+  const tc = row.tool_calls;
+  if (!tc || tc.budget == null) return "—";
+  return `${tc.used}/${tc.budget}`;
+}
+
+function toolCallText(row) {
+  const tc = row.tool_calls;
+  if (!tc || tc.budget == null) return "—";
+  const bits = [`Best case is ${tc.budget}. This run used ${tc.used}.`];
+  if (tc.extra?.length) bits.push(`Extra: ${tc.extra.join(", ")}.`);
+  if (tc.missing?.length) bits.push(`Missing: ${tc.missing.join(", ")}.`);
+  return bits.join(" ");
+}
+
+function toolsLine(row) {
+  const counts = row.tool_calls?.counts || {};
+  const names = Object.keys(counts);
+  if (!names.length) return "—";
+  return names.map((name) => `${name} ×${counts[name]}`).join(" · ");
+}
+
+function factsLine(facts) {
+  if (!facts?.length) return "—";
+  return facts.map((fact) => `${fact.label} ${fact.hit ? "hit" : "miss"}`).join(" · ");
+}
+
+function tokenText(row) {
+  if (row.tokens_in == null || row.tokens_out == null) return "in/out unknown";
+  return `in ${row.tokens_in} · out ${row.tokens_out}`;
+}
+
+function timeText(row) {
+  if (row.elapsed_s == null) return "—";
+  return `${Number(row.elapsed_s).toFixed(1)}s`;
 }
 
 function mergeRows(cases, summary) {
@@ -76,6 +120,71 @@ function CaseCell({ row, open, onOpen, onClose }) {
   );
 }
 
+function RunRecord({ row }) {
+  return (
+    <table className="run-record">
+      <tbody>
+        <tr>
+          <th>Prompt</th>
+          <td>{row.prompt || "—"}</td>
+        </tr>
+        <tr>
+          <th>Answer</th>
+          <td>{row.answer || "—"}</td>
+        </tr>
+        <tr>
+          <th>Gold answer</th>
+          <td>{row.gold_answer || "—"}</td>
+        </tr>
+        <tr>
+          <th>Plan</th>
+          <td>{row.plan || "—"}</td>
+        </tr>
+        <tr>
+          <th>Tools</th>
+          <td>{toolsLine(row)}</td>
+        </tr>
+        <tr>
+          <th>Tool calls</th>
+          <td>{toolCallText(row)}</td>
+        </tr>
+        <tr>
+          <th>Gold facts</th>
+          <td>{factsLine(row.facts)}</td>
+        </tr>
+        <tr>
+          <th>Accuracy</th>
+          <td>{accuracyText(row.accuracy)}</td>
+        </tr>
+        <tr>
+          <th>Judge</th>
+          <td>
+            G {scoreText(row.G)} · C {scoreText(row.C)} · R {scoreText(row.R)}
+          </td>
+        </tr>
+        <tr>
+          <th>Tokens</th>
+          <td>{tokenText(row)}</td>
+        </tr>
+        <tr>
+          <th>Time</th>
+          <td>{timeText(row)}</td>
+        </tr>
+        <tr>
+          <th>Trace</th>
+          <td>
+            {row.trace?.length ? (
+              <pre>{JSON.stringify(row.trace, null, 2)}</pre>
+            ) : (
+              "—"
+            )}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 export default function EvalPage({ username, onBack, hidden = false }) {
   const [runs, setRuns] = useState(3);
   const [busy, setBusy] = useState(false);
@@ -87,6 +196,35 @@ export default function EvalPage({ username, onBack, hidden = false }) {
   const [casesNote, setCasesNote] = useState("Loading gold cases…");
   const [casesError, setCasesError] = useState(false);
   const [openId, setOpenId] = useState(null);
+  const [openRun, setOpenRun] = useState(null);
+
+  useEffect(() => {
+    let cancel = false;
+    setLog([]);
+    setSummary([]);
+    setStatus("Idle");
+    setOpenRun(null);
+    setError("");
+    (async () => {
+      try {
+        const res = await fetch("/api/eval/result", {
+          headers: { Accept: "application/json", "X-Username": username },
+        });
+        const data = await res.json().catch(() => null);
+        if (cancel || !res.ok || !data) return;
+        if (Array.isArray(data.summary) && data.summary.length) setSummary(data.summary);
+        if (Array.isArray(data.log) && data.log.length) setLog(data.log);
+        if (data.status) setStatus(data.status);
+        const times = Number(data.runs);
+        if (Number.isInteger(times) && times >= 1 && times <= 5) setRuns(times);
+      } catch {
+        if (!cancel) setStatus("Idle");
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [username]);
 
   useEffect(() => {
     let cancel = false;
@@ -117,13 +255,15 @@ export default function EvalPage({ username, onBack, hidden = false }) {
   }, [username]);
 
   useEffect(() => {
-    if (!openId) return undefined;
+    if (!openId && !openRun) return undefined;
     function onKey(ev) {
-      if (ev.key === "Escape") setOpenId(null);
+      if (ev.key !== "Escape") return;
+      setOpenId(null);
+      setOpenRun(null);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openId]);
+  }, [openId, openRun]);
 
   async function start(e) {
     e.preventDefault();
@@ -137,6 +277,7 @@ export default function EvalPage({ username, onBack, hidden = false }) {
     setError("");
     setLog([]);
     setSummary([]);
+    setOpenRun(null);
     setStatus("Starting");
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 60 * 60 * 1000);
@@ -205,7 +346,7 @@ export default function EvalPage({ username, onBack, hidden = false }) {
         <div className="banner-inner">
           <div>
             <h1>Gold eval</h1>
-            <p>Score each gold case with the live judge.</p>
+            <p>Live G, C, and R, plus accuracy and tool calls.</p>
           </div>
           <div className="who">
             <span>{username}</span>
@@ -219,7 +360,9 @@ export default function EvalPage({ username, onBack, hidden = false }) {
       <section className="eval-panel">
         <p className="lede">
           Each start uploads {FILE_NAME} through the same ingest as chat, then runs
-          every gold case that many times. Scores are G, C, and R from the live judge.
+          Q1 and Multi-1. G, C, and R come from the live judge. Accuracy is a pass
+          or a miss against the gold facts. Tool calls compares the run with the
+          best-case budget.
         </p>
         <form onSubmit={start} className="row">
           <label>
@@ -249,20 +392,18 @@ export default function EvalPage({ username, onBack, hidden = false }) {
             <tr>
               <th>Case</th>
               <th>Scored</th>
-              <th>G mean</th>
-              <th>G stdev</th>
-              <th>C mean</th>
-              <th>C stdev</th>
-              <th>R mean</th>
-              <th>R stdev</th>
-              <th>Tools</th>
+              <th>G mean/stdev</th>
+              <th>C mean/stdev</th>
+              <th>R mean/stdev</th>
+              <th>Accuracy</th>
+              <th>Tool calls</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9}>
-                  {casesNote || "Means and standard deviations show up as runs finish."}
+                <td colSpan={7}>
+                  {casesNote || "Means show up as runs finish."}
                 </td>
               </tr>
             ) : (
@@ -275,32 +416,45 @@ export default function EvalPage({ username, onBack, hidden = false }) {
                     onClose={() => setOpenId(null)}
                   />
                   <td>{row.G ? `${row.G.n}/${row.runs}` : "—"}</td>
-                  <td>{fmt(row.G)}</td>
-                  <td>{fmtStd(row.G)}</td>
-                  <td>{fmt(row.C)}</td>
-                  <td>{fmtStd(row.C)}</td>
-                  <td>{fmt(row.R)}</td>
-                  <td>{fmtStd(row.R)}</td>
-                  <td>{row.tools_passed == null ? "—" : `${row.tools_passed}/${row.runs}`}</td>
+                  <td>{meanStd(row.G)}</td>
+                  <td>{meanStd(row.C)}</td>
+                  <td>{meanStd(row.R)}</td>
+                  <td>{ratio(row.accuracy_passed, row.runs)}</td>
+                  <td>{ratio(row.tool_calls_passed, row.runs)}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
         <ol className="eval-log">
-          {log.map((row, i) => (
-            <li key={`${row.case}-${row.run}-${i}`}>
-              <strong>
-                {row.case} · run {row.run} of {row.runs}
-              </strong>
-              {" · "}
-              G {scoreText(row.G)} · C {scoreText(row.C)} · R {scoreText(row.R)}
-              {" · "}
-              tools {row.tools_ok ? "ok" : "miss"}
-              {row.kind ? ` · ${row.kind}` : ""}
-              {row.error ? ` · ${row.error}` : ""}
-            </li>
-          ))}
+          {log.map((row, i) => {
+            const key = `${row.case}-${row.run}-${i}`;
+            const open = openRun === key;
+            return (
+              <li key={key}>
+                <button
+                  type="button"
+                  className="run-name"
+                  aria-expanded={open}
+                  onClick={() => setOpenRun(open ? null : key)}
+                >
+                  <strong>
+                    {row.case} · run {row.run} of {row.runs}
+                  </strong>
+                  {" · "}
+                  G {scoreText(row.G)} · C {scoreText(row.C)} · R {scoreText(row.R)}
+                  {" · "}
+                  accuracy {accuracyText(row.accuracy)}
+                  {" · "}
+                  tool calls {toolRatio(row)}
+                  {" · "}
+                  {timeText(row)}
+                  {row.error ? ` · ${row.error}` : ""}
+                </button>
+                {open && <RunRecord row={row} />}
+              </li>
+            );
+          })}
         </ol>
       </section>
       </main>

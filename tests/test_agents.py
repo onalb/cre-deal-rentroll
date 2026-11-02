@@ -290,7 +290,7 @@ def _install_fake_strands(monkeypatch, agent_cls, model_cls=None):
     monkeypatch.setitem(sys.modules, "strands", strands_mod)
     monkeypatch.setitem(sys.modules, "strands.models", models_mod)
     monkeypatch.setitem(sys.modules, "strands.models.openai", openai_mod)
-    monkeypatch.setattr("cre_rentroll.agents._strands_tools", lambda _names: [])
+    monkeypatch.setattr("cre_rentroll.agents._setup_tools_strands", lambda _names: [])
     monkeypatch.setattr("cre_rentroll.agents.openai_client_args", lambda: {})
 
 
