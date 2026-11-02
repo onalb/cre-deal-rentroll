@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { runBrief } from "./runBrief.js";
 
 const FILE_NAME = "La Cordoba Rent Roll 04-20-21 (2) 164.xlsx";
 
@@ -121,9 +122,24 @@ function CaseCell({ row, open, onOpen, onClose }) {
 }
 
 function RunRecord({ row }) {
+  const brief = runBrief(row);
   return (
     <table className="run-record">
       <tbody>
+        <tr>
+          <th>Summary</th>
+          <td>
+            <p>
+              <strong>Went well.</strong> {brief.well}
+            </p>
+            <p>
+              <strong>Went wrong.</strong> {brief.wrong}
+            </p>
+            {brief.scores.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </td>
+        </tr>
         <tr>
           <th>Prompt</th>
           <td>{row.prompt || "—"}</td>
@@ -392,9 +408,9 @@ export default function EvalPage({ username, onBack, hidden = false }) {
             <tr>
               <th>Case</th>
               <th>Scored</th>
-              <th>G mean/stdev</th>
-              <th>C mean/stdev</th>
-              <th>R mean/stdev</th>
+              <th>G mean/Std</th>
+              <th>C mean/Std</th>
+              <th>R mean/Std</th>
               <th>Accuracy</th>
               <th>Tool calls</th>
             </tr>

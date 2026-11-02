@@ -591,7 +591,7 @@ def vault_calc_ok(
     return True
 
 
-JUDGE_SYS = """You are a CRE rent-roll eval judge. Score integers 1-5. Return JSON only: {"R":n,"G":n,"request_C":n,"reason":"short why","instructional":false}
+JUDGE_SYS = """You are a CRE rent-roll eval judge. Score integers 1-5. Return JSON only: {"R":n,"G":n,"request_C":n,"G_reason":"one sentence","C_reason":"one sentence","R_reason":"one sentence","reason":"short why","instructional":false}
 
 R (relevance): Is the answer on-topic for this user question? High if it addresses the CRE ask. High if the user asked identity, greetings, weather, sports, recipes, or other non-deal chat and the answer is the rent-roll-only refuse. Low (1-2) if a CRE ask gets off-topic chatter, or if a non-deal ask gets a CRE/tool answer instead of the refuse.
 - Any in-scope area/market question (demographics, hazards, comps, average property value, listings) is on-topic CRE. High R if the answer cites search hits or a stated area/market figure. Citations/search hits are the payload. Do not score R=1 as off-topic / "not a rent-roll question" for omitting occupancy, units, this-roll payload, or a rent-roll definition. Listing URLs are allowed.
@@ -624,6 +624,7 @@ C (request completeness — not gold.json): Did the answer cover what was asked 
 instructional: true when the vacancy-agent answer (last ask_prediction_agent) is giving the user instructions or asking them to act before a score can be given (pick a plan/variant, cannot aggregate, not trained, list trained, need a building name). false when it already delivered a forecast/score, and false when ask_prediction_agent is not in FACTS.tools.
 
 Judge only from QUERY, ANSWER, and FACTS.
+G_reason, C_reason, and R_reason: always one sentence each for why that score was given. If a score is 1-3 or the answer invents numbers, cite the vault or tool figure in that sentence.
 reason: if any of G/C/R is 1-2 or the answer invents numbers, say which axis failed and cite vault/tool figures. Optional notes / justification / invented fields are merged into reason. Do not quote the user question, interview questions, or gold.json."""
 
 
@@ -719,6 +720,15 @@ def _strip_query_leak(text: str, query: str) -> str:
     return out
 
 
+def _axis_reason(data: dict[str, Any], query: str, *keys: str) -> str:
+    for key in keys:
+        val = data.get(key)
+        if isinstance(val, str) and val.strip():
+            text = re.sub(r"\s+", " ", val).strip()
+            return _strip_query_leak(text, query)[:300]
+    return ""
+
+
 def _judge_comment(data: dict[str, Any], query: str = "") -> str:
     parts: list[str] = []
     seen: set[str] = set()
@@ -762,7 +772,7 @@ def live_judge(query: str, answer: str, roll: CanonicalRentRoll | None, traces: 
     if not openai_api_key():
         return EvalScores(vault_calc_ok=ok, judge="error", reason="OpenAI API key missing")
     try:
-        r, g, c, reason, instructional = _llm_scores(query, answer, roll, traces)
+        r, g, c, reason, instructional, axes = _llm_scores(query, answer, roll, traces)
         return EvalScores(
             R=r,
             G=g,
@@ -770,6 +780,9 @@ def live_judge(query: str, answer: str, roll: CanonicalRentRoll | None, traces: 
             vault_calc_ok=ok,
             judge="llm",
             reason=reason or None,
+            g_reason=axes.get("g_reason") or None,
+            c_reason=axes.get("c_reason") or None,
+            r_reason=axes.get("r_reason") or None,
             instructional=instructional,
         )
     except Exception as exc:
@@ -795,7 +808,7 @@ def _instructional_flag(data: dict[str, Any]) -> bool | None:
 
 def _llm_scores(
     query: str, answer: str, roll: CanonicalRentRoll | None, traces: list[dict[str, Any]]
-) -> tuple[int, int, int, str, bool | None]:
+) -> tuple[int, int, int, str, bool | None, dict[str, str]]:
     from openai import OpenAI
 
     from cre_rentroll.settings import openai_classify_model, openai_client_args
@@ -823,7 +836,7 @@ def _llm_scores(
         ],
         response_format={"type": "json_object"},
         temperature=0,
-        max_tokens=240,
+        max_tokens=400,
     )
     from cre_rentroll.turn_ctx import add_llm_from_response
 
@@ -841,6 +854,11 @@ def _llm_scores(
         _clamp_score(data["request_C"]),
         reason,
         _instructional_flag(data),
+        {
+            "g_reason": _axis_reason(data, query, "G_reason", "g_reason"),
+            "c_reason": _axis_reason(data, query, "C_reason", "c_reason"),
+            "r_reason": _axis_reason(data, query, "R_reason", "r_reason"),
+        },
     )
 
 

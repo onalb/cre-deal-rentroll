@@ -6,7 +6,7 @@ G, C, and R are the live judge. Accuracy is this page: the answer hit every gold
 
 ## Summary
 
-| Case | Scored | G mean/stdev | C mean/stdev | R mean/stdev | Accuracy | Tool calls |
+| Case | Scored | G mean/Std | C mean/Std | R mean/Std | Accuracy | Tool calls |
 | --- | --- | --- | --- | --- | --- | --- |
 | Q1 | 3/3 | 4.67 ±0.58 | 5.00 ±0.00 | 5.00 ±0.00 | 3/3 | 3/3 |
 | Multi-1 | 3/3 | 4.67 ±0.58 | 4.67 ±0.58 | 5.00 ±0.00 | 2/3 | 2/3 |
@@ -30,6 +30,7 @@ Every log row opens the same record. Run 2 is not a special slot. It is one of t
 
 | Field | Record |
 | --- | --- |
+| Summary | Went well. Groundedness 5, Completeness 5, Relevance 5. Accuracy passed. The answer matched the gold answer. Tool calls matched the budget of 2. Went wrong. Nothing in this run failed the checks. G 5. The figures match the roll. C 5. The abstract covers every asked total. R 5. The answer stays on the rent roll. A pass. unit count 10 is in the answer. |
 | Prompt | Abstract this rent roll: unit count, occupancy, in-place monthly income, vacant count, MTM if present. Cite computed totals. Do not geocode or search. |
 | Answer | States unit count, occupancy, in-place monthly income, vacant count, and month-to-month count from the roll. |
 | Gold answer | unit count 10 · occupancy 90.00% · in-place monthly 1000 · vacant count 1 · month-to-month 2 |
@@ -46,6 +47,7 @@ Every log row opens the same record. Run 2 is not a special slot. It is one of t
 
 | Field | Record |
 | --- | --- |
+| Summary | Went well. Groundedness 5, Completeness 4, Relevance 5. Matched vacant count, occupancy. Went wrong. Missing from the gold answer: place. Used 3 tool calls against a budget of 2. Extra: osm_geocode. G 5. The vacant count and occupancy match the tools. C 4. The street was left out. R 5. The answer stays on the map and occupancy question. A miss. place 100 Congress Ave, Austin, TX 78701 is not in the answer. |
 | Prompt | Where is this property? Can you put it on a map, and how many units are vacant, and what is occupancy? |
 | Answer | States the roll's vacant count and occupancy. Quotes two geocodes. Does not name the street on the roll. |
 | Gold answer | vacant count 1 · occupancy 90.00% · place 100 Congress Ave, Austin, TX 78701 |

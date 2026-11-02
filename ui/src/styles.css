@@ -408,6 +408,8 @@ button.run-name[aria-expanded="true"] {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.run-record p { margin: 0 0 0.35rem; }
+.run-record p:last-child { margin-bottom: 0; }
 .run-record pre {
   margin: 0;
   white-space: pre-wrap;

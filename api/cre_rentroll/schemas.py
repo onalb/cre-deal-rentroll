@@ -182,6 +182,9 @@ class EvalScores(BaseModel):
     retry: bool = False
     judge: str | None = None
     reason: str | None = None
+    g_reason: str | None = None
+    c_reason: str | None = None
+    r_reason: str | None = None
     instructional: bool | None = None
 
 

@@ -1192,6 +1192,27 @@ def _mock_openai(monkeypatch, payload: str | Exception):
     return captured
 
 
+def test_live_judge_reads_axis_reasons(monkeypatch):
+    _mock_openai(
+        monkeypatch,
+        json.dumps(
+            {
+                "R": 5,
+                "G": 4,
+                "request_C": 3,
+                "G_reason": "Vacant count matches the tool.",
+                "C_reason": "The street is missing.",
+                "R_reason": "The answer stays on the question.",
+                "reason": "C is low because the street is missing.",
+            }
+        ),
+    )
+    scores = live_judge("Where is this property?", "1 vacant and 90% occupied.", None, [])
+    assert scores.g_reason == "Vacant count matches the tool."
+    assert scores.c_reason == "The street is missing."
+    assert scores.r_reason == "The answer stays on the question."
+
+
 def test_live_judge_reads_reason_notes_justification(monkeypatch):
     _mock_openai(
         monkeypatch,
