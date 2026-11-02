@@ -506,7 +506,7 @@ def agent_tool_impls() -> dict[str, Callable[..., str]]:
     return {name: _context_bound(fn, name) for name, fn in tools.TOOL_IMPLS.items()}
 
 
-def _strands_tools(names: tuple[str, ...]) -> list[Any]:
+def _setup_tools_strands(names: tuple[str, ...]) -> list[Any]:
     """Book tools are `tools.TOOL_IMPLS`, called in this process.
 
     Signatures stay the real ones (create_plan(tasks), query_units(occupancy,
@@ -908,6 +908,7 @@ def _react_text(result: Any, messages: Any) -> str:
     return ""
 
 
+# Build the Strands agent, run its think-act loop, and return the prose draft.
 def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
     from strands import Agent
     from strands.models.openai import OpenAIModel
@@ -921,7 +922,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
     agent = Agent(
         model=model,
         system_prompt=system_prompt(inv, facts),
-        tools=_strands_tools(inv.tool_names),
+        tools=_setup_tools_strands(inv.tool_names),
         callback_handler=tracker.callback,
     )
     live = getattr(agent, "model", model)
@@ -932,6 +933,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
     started = time.monotonic()
     budget = 32.0
 
+    # Run the given function on a worker thread and wait for the time left in the 32-second budget.
     def _timed(fn: Callable[[], Any]) -> Any:
         left = budget - (time.monotonic() - started)
         if left <= 0.5:
@@ -953,6 +955,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
         # starves ReAct (limit_turns, zero tools). G/C/R is score_gcr in-loop.
         bind_turn_context()
         try:
+            # RUN Cycle: STEP 7: Run the Strands think-act loop and return its result.
             return agent(prompt, limits={"turns": turn_ctx.REACT_TURN_LIMIT})
         except PredictClarifyStop as exc:
             return str(exc) or ""
@@ -961,6 +964,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
 
     before = turn_ctx.llm_call_count()
     try:
+        # RUN Cycle: STEP 6: Run the loop on a worker thread and wait for it.
         result = _timed(_react)
     except FuturesTimeout as exc:
         raise RateLimitedError(
@@ -1283,9 +1287,11 @@ def _openai_specs(names: tuple[str, ...]) -> list[dict[str, Any]]:
     ]
 
 
+# Call Strands, or the OpenAI tool loop when Strands is not installed, and return the draft.
 def run_agent(prompt: str, inv: Inventory, facts: str) -> str:
     try:
         import strands  # noqa: F401
     except ImportError:
         return run_openai_tools(prompt, inv, facts)
+    # RUN Cycle: STEP 5: Build the Strands agent and run its loop.
     return run_strands(prompt, inv, facts)
