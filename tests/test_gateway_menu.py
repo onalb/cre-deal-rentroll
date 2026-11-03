@@ -46,11 +46,23 @@ def _stub_turn(monkeypatch, draft: str, roll: CanonicalRentRoll | None = None) -
     return captured
 
 
-# Gateway names without a deal-app implementation must not reach the menu,
-# and the predict gate still applies to the gateway answer (this ask is not
-# forward-looking, so ask_prediction_agent drops).
+# cre_ping is not a model tool. The predict gate still drops
+# ask_prediction_agent when the ask is not forward-looking. score_gcr is
+# local and is added beside the gateway list. Other gateway names stay.
 _GATEWAY_LIST = [
-    "cre_ping",
+    {"name": "cre_ping", "description": "ping", "input_schema": {"type": "object", "properties": {}}},
+    {"name": "parse_rent_roll_file", "description": "parse", "input_schema": {"type": "object", "properties": {}}},
+    {"name": "create_plan", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
+    {"name": "update_plan", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
+    {"name": "update_plan_status", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
+    {"name": "reflection", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
+    {"name": "query_units", "description": "units", "input_schema": {"type": "object", "properties": {}}},
+    {"name": "compute_income", "description": "income", "input_schema": {"type": "object", "properties": {}}},
+    {"name": "web_search", "description": "search", "input_schema": {"type": "object", "properties": {}}},
+    {"name": "ask_prediction_agent", "description": "predict", "input_schema": {"type": "object", "properties": {}}},
+]
+
+_GATEWAY_MENU = (
     "parse_rent_roll_file",
     "create_plan",
     "update_plan",
@@ -59,24 +71,14 @@ _GATEWAY_LIST = [
     "query_units",
     "compute_income",
     "web_search",
-    "ask_prediction_agent",
-]
-
-_GATEWAY_MENU = (
-    "create_plan",
-    "update_plan",
-    "update_plan_status",
-    "reflection",
-    "query_units",
-    "compute_income",
-    "web_search",
+    "score_gcr",
 )
 
 
 def test_gateway_list_is_the_base_menu_when_mcp_configured(monkeypatch):
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     monkeypatch.setattr(
-        "cre_rentroll.mcp_gateway.list_tools",
+        "cre_rentroll.mcp_gateway.list_tool_specs",
         lambda timeout=30.0: list(_GATEWAY_LIST),
     )
     captured = _stub_turn(monkeypatch, "Occupancy is 50 percent.", roll=_roll())
@@ -95,7 +97,7 @@ def test_gateway_list_is_the_base_menu_when_mcp_configured(monkeypatch):
 def test_gateway_menu_keeps_planless_filtering(monkeypatch):
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     monkeypatch.setattr(
-        "cre_rentroll.mcp_gateway.list_tools",
+        "cre_rentroll.mcp_gateway.list_tool_specs",
         lambda timeout=30.0: list(_GATEWAY_LIST),
     )
     captured = _stub_turn(monkeypatch, "Occupancy is 50 percent.", roll=_roll())
@@ -108,11 +110,13 @@ def test_gateway_menu_keeps_planless_filtering(monkeypatch):
     # Planless single-tool ask: create_plan / update_plan_status stay off the
     # gateway menu; update_plan remains the escape hatch.
     assert captured["inv"].tool_names == (
+        "parse_rent_roll_file",
         "update_plan",
         "reflection",
         "query_units",
         "compute_income",
         "web_search",
+        "score_gcr",
     )
 
 
@@ -123,7 +127,7 @@ def test_offline_book_menu_when_mcp_unset(monkeypatch):
     def boom(timeout=30.0):
         raise AssertionError("tools/list must not run when MCP_URL is unset")
 
-    monkeypatch.setattr("cre_rentroll.mcp_gateway.list_tools", boom)
+    monkeypatch.setattr("cre_rentroll.mcp_gateway.list_tool_specs", boom)
     captured = _stub_turn(monkeypatch, "Occupancy is 50 percent.", roll=_roll())
     seen = []
     token = bind(seen.append)

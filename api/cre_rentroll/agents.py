@@ -74,6 +74,7 @@ class Inventory:
     tool_names: tuple[str, ...]
     skills: tuple[str, ...]
     structured: str = ""
+    specs: tuple[dict[str, Any], ...] = ()
 
 
 BOOK = Inventory("DealRentroll", BOOK_TOOLS, BOOK_SKILLS)
@@ -506,23 +507,36 @@ def agent_tool_impls() -> dict[str, Callable[..., str]]:
     return {name: _context_bound(fn, name) for name, fn in tools.TOOL_IMPLS.items()}
 
 
-def _setup_tools_strands(names: tuple[str, ...]) -> list[Any]:
-    """Book tools are `tools.TOOL_IMPLS`, called in this process.
+def _setup_tools_strands(
+    names: tuple[str, ...],
+    specs: tuple[dict[str, Any], ...] = (),
+) -> list[Any]:
+    """Gateway specs become one forwarder each. score_gcr stays a local tool.
 
-    Signatures stay the real ones (create_plan(tasks), query_units(occupancy,
-    vacant_only), …). Do not wrap *args/**kwargs — Strands builds Pydantic from
-    inspect.signature and would then require args+kwargs.
+    Signatures stay explicit. Do not wrap *args/**kwargs — Strands builds
+    Pydantic from inspect.signature and would then require args+kwargs.
     Empty names (out-of-scope): do not build tool callables.
     """
     if not names:
         return []
     from strands import tool as strands_tool
 
+    from cre_rentroll.forward import deal_call, tool_function
+
+    by_name = {str(spec.get("name") or ""): spec for spec in specs}
+    spec_list = list(specs)
     mapping = agent_tool_impls()
     wrapped = []
     for name in names:
-        fn = mapping[name]
-        wrapped.append(strands_tool(name=name, description=inspect.getdoc(fn) or name)(fn))
+        spec = by_name.get(name)
+        if spec is not None:
+            raw = tool_function(spec, lambda tool_name, args, _specs=spec_list: deal_call(tool_name, args, _specs))
+            fn = _context_bound(raw, name)
+            description = str(spec.get("description") or name)
+        else:
+            fn = mapping[name]
+            description = inspect.getdoc(fn) or name
+        wrapped.append(strands_tool(name=name, description=description)(fn))
     return wrapped
 
 
@@ -922,7 +936,7 @@ def run_strands(prompt: str, inv: Inventory, facts: str) -> str:
     agent = Agent(
         model=model,
         system_prompt=system_prompt(inv, facts),
-        tools=_setup_tools_strands(inv.tool_names),
+        tools=_setup_tools_strands(inv.tool_names, inv.specs),
         callback_handler=tracker.callback,
     )
     live = getattr(agent, "model", model)
@@ -986,12 +1000,48 @@ def run_openai_tools(prompt: str, inv: Inventory, facts: str) -> str:
 
     client = OpenAI(**openai_client_args())
     model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    spec = _openai_specs(inv.tool_names)
+    if inv.specs:
+        from cre_rentroll.forward import deal_call, model_schema, tool_function
+
+        spec_list = list(inv.specs)
+        by_name = {str(item.get("name") or ""): item for item in inv.specs}
+        impls = {}
+        spec = []
+        for name in inv.tool_names:
+            item = by_name.get(name)
+            if item is None:
+                continue
+            fn = _context_bound(
+                tool_function(
+                    item,
+                    lambda tool_name, args, _specs=spec_list: deal_call(tool_name, args, _specs),
+                ),
+                name,
+            )
+            impls[name] = fn
+            spec.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": str(item.get("description") or name),
+                        "parameters": model_schema(item),
+                    },
+                }
+            )
+        local = agent_tool_impls()
+        for name in inv.tool_names:
+            if name in impls or name not in local:
+                continue
+            impls[name] = local[name]
+            spec.extend(_openai_specs((name,)))
+    else:
+        spec = _openai_specs(inv.tool_names)
+        impls = agent_tool_impls() if spec else {}
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt(inv, facts)},
         {"role": "user", "content": prompt},
     ]
-    impls: dict[str, Callable[..., str]] = agent_tool_impls() if spec else {}
     bind_turn_context()
     try:
         return _run_openai_tools_loop(client, model, spec, messages, impls)

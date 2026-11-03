@@ -312,17 +312,22 @@ def run_task(
             begin_turn(username)
         except Exception:
             pass
-        from cre_rentroll.mcp_gateway import list_tools, mcp_url
-        from cre_rentroll.tools import TOOL_IMPLS
+        from cre_rentroll.mcp_gateway import list_tool_specs, mcp_url
 
+        gateway_specs: tuple[dict, ...] = ()
         if mcp_url():
-            # Gateway-driven menu: the gateway is the source of truth when it
-            # is configured. Its role-filtered tools/list answer is the base
-            # menu, and the app keeps only names it has local implementations
-            # for (cre_ping and vacancy-role tools have no deal-app impl).
-            names = tuple(n for n in list_tools() if n in TOOL_IMPLS)
-            # App-side per-turn orchestration on top of the gateway menu.
+            # Gateway-driven menu: tools/list is the menu. cre_ping is not a
+            # model tool. score_gcr stays local and is added beside the list.
+            specs = [
+                spec
+                for spec in list_tool_specs()
+                if spec.get("name") and spec["name"] != "cre_ping"
+            ]
+            gateway_specs = tuple(specs)
+            names = tuple(str(spec["name"]) for spec in specs)
             names = filter_book_tools(names, shown_user, username=username)
+            if "score_gcr" not in names:
+                names = (*names, "score_gcr")
         else:
             # Offline fallback: BOOK_TOOLS is the hardcoded menu when no
             # gateway is configured (tests, local dev). The gateway answer
@@ -343,7 +348,7 @@ def run_task(
         skills = BOOK.skills
         if allow_predict(shown_user, username=username):
             skills = (*skills, "rr-predict")
-        inv = Inventory(BOOK.name, names, skills)
+        inv = Inventory(BOOK.name, names, skills, specs=gateway_specs)
     else:
         # Prompt-only OOS was ignored by ReAct (always create_plan / web_search).
         # Offer no tools, skills, Gateway, or Memory so chitchat cannot MCP.

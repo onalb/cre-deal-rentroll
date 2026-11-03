@@ -90,8 +90,12 @@ def _stub_book_run(monkeypatch, roll: CanonicalRentRoll) -> None:
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     monkeypatch.setattr(
-        "cre_rentroll.mcp_gateway.list_tools",
-        lambda timeout=30.0: ["ask_prediction_agent", "query_units", "create_plan"],
+        "cre_rentroll.mcp_gateway.list_tool_specs",
+        lambda timeout=30.0: [
+            {"name": "ask_prediction_agent", "description": "predict", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "query_units", "description": "units", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "create_plan", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
+        ],
     )
     monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(

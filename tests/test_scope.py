@@ -166,8 +166,11 @@ def test_run_task_need_file_vault_gate_no_extra_llm(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
     monkeypatch.setattr(
-        "cre_rentroll.mcp_gateway.list_tools",
-        lambda timeout=30.0: ["query_units", "create_plan"],
+        "cre_rentroll.mcp_gateway.list_tool_specs",
+        lambda timeout=30.0: [
+            {"name": "query_units", "description": "units", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "create_plan", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
+        ],
     )
     from cre_rentroll.scope import NEED_FILE_TEXT
     from cre_rentroll.tools import query_units
