@@ -138,8 +138,27 @@ def stamp_arguments(
     return clean
 
 
+def _json_type(prop: dict[str, Any]) -> str | None:
+    """JSON schema type, including anyOf/oneOf number|null."""
+    kind = prop.get("type")
+    if isinstance(kind, str):
+        return kind
+    for key in ("anyOf", "oneOf"):
+        options = prop.get(key)
+        if not isinstance(options, list):
+            continue
+        kinds = [
+            item.get("type")
+            for item in options
+            if isinstance(item, dict) and isinstance(item.get("type"), str) and item.get("type") != "null"
+        ]
+        if len(kinds) == 1:
+            return str(kinds[0])
+    return None
+
+
 def _annotation(prop: dict[str, Any], required: bool) -> Any:
-    kind = prop.get("type") if isinstance(prop, dict) else None
+    kind = _json_type(prop) if isinstance(prop, dict) else None
     base: Any = {
         "integer": int,
         "number": float,
@@ -172,7 +191,17 @@ def tool_function(spec: dict[str, Any], call: Callable[[str, dict[str, Any]], st
         return call(name, kwargs)
 
     fn.__name__ = name
-    fn.__doc__ = str(spec.get("description") or name)
+    doc_lines = [str(spec.get("description") or name)]
+    arg_lines = []
+    for param_name, prop in props.items():
+        if not isinstance(prop, dict):
+            continue
+        text = str(prop.get("description") or "").strip()
+        if text:
+            arg_lines.append(f"    {param_name}: {text}")
+    if arg_lines:
+        doc_lines.extend(["", "Args:", *arg_lines])
+    fn.__doc__ = "\n".join(doc_lines)
     fn.__signature__ = inspect.Signature(parameters)  # type: ignore[attr-defined]
     fn.__annotations__ = {param.name: param.annotation for param in parameters}
     return fn
