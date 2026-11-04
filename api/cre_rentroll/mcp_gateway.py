@@ -104,7 +104,6 @@ def _sign_and_post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
         )
     else:
         # Local capabilities gateway (and non-AgentCore test URLs) do not require SigV4.
-        # PRE-RUN: Get tools list from the gateway.
         response = httpx.post(
             url,
             content=data,

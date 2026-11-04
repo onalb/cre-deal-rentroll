@@ -320,6 +320,7 @@ def run_task(
             # model tool. score_gcr stays local and is added beside the list.
             specs = [
                 spec
+                # PRE-RUN: Get tools list from the gateway. (tool definition)
                 for spec in list_tool_specs()
                 if spec.get("name") and spec["name"] != "cre_ping"
             ]
