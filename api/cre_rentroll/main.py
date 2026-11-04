@@ -13,8 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from cre_rentroll import __version__
 from cre_rentroll.settings import openai_api_key
 from cre_rentroll import dynamo, harness, run_events, vault
+from cre_rentroll.capabilities_client import gateway_version
 from gold_eval.routes import router as gold_eval_router
 from cre_rentroll.memory import retrieve_facts
 
@@ -30,7 +32,7 @@ def _cors_origins() -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-app = FastAPI(title="CRE Deal Rentroll", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="CRE Deal Rentroll", version=__version__, lifespan=lifespan)
 app.include_router(gold_eval_router)
 app.add_middleware(
     CORSMiddleware,
@@ -57,6 +59,8 @@ def health() -> dict[str, Any]:
     inside = os.environ.get("AGENTCORE_INSIDE", "").strip() in {"1", "true", "yes"}
     return {
         "ok": True,
+        "version": __version__,
+        "capabilities_gateway_version": gateway_version(),
         "openai_key_present": key,
         "ddb_endpoint": os.environ.get("DDB_ENDPOINT") or "",
         "table": os.environ.get("DDB_TABLE", "ml_interview"),

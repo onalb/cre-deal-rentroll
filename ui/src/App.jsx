@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { version as uiVersion } from "../package.json";
 import { compactRunLog } from "./compactRunLog";
 import { DEMO_CHIPS, fillChipPrompt } from "./demoChips";
 import { logMessageParts } from "./boldToolNames";
@@ -21,6 +22,15 @@ function errorMessage(err, data, status) {
     return "The request timed out. Wait a minute and send again.";
   }
   return fromBody || err?.message || "Something went wrong. Please try again.";
+}
+
+function versionText(health) {
+  const ui = `UI ${uiVersion}`;
+  if (!health) return `${ui} · API … · Gateway …`;
+  if (!health.ok) return `${ui} · API unavailable · Gateway unavailable`;
+  const api = health.version || "unknown";
+  const gateway = health.capabilities_gateway_version || "unavailable";
+  return `${ui} · API ${api} · Gateway ${gateway}`;
 }
 
 function displayContent(m) {
@@ -389,6 +399,7 @@ export default function App() {
             <button type="submit">Enter</button>
           </form>
           {error && <p className="err">{error}</p>}
+          <p className="versions">{versionText(health)}</p>
           <p className="hint">
             API {health?.ok ? "up" : "…"} · OpenAI key{" "}
             {health?.openai_key_present ? "present" : "missing (ingest still works)"}
@@ -410,6 +421,7 @@ export default function App() {
           <div>
             <h1>Deal chat</h1>
             <p>Attach a rent roll, then ask about units, location, or income.</p>
+            <p className="versions">{versionText(health)}</p>
           </div>
           <div className="who">
             <span>
@@ -618,7 +630,7 @@ export default function App() {
         </aside>
       </main>
     </div>
-    <EvalPage username={username} hidden={!showEval} onBack={() => setView("chat")} />
+    <EvalPage username={username} hidden={!showEval} onBack={() => setView("chat")} versions={versionText(health)} />
     </>
   );
 }

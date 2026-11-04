@@ -18,10 +18,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from cre_rentroll import harness, run_events
+from cre_rentroll import __version__, harness, run_events
 from cre_rentroll.schemas import ChatOutcome
 
-app = FastAPI(title="CRE Deal Rentroll AgentCore", version="0.1.0")
+app = FastAPI(title="CRE Deal Rentroll AgentCore", version=__version__)
 
 
 class InvocationBody(BaseModel):

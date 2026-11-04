@@ -201,7 +201,7 @@ function RunRecord({ row }) {
   );
 }
 
-export default function EvalPage({ username, onBack, hidden = false }) {
+export default function EvalPage({ username, onBack, hidden = false, versions = "" }) {
   const [runs, setRuns] = useState(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -363,6 +363,7 @@ export default function EvalPage({ username, onBack, hidden = false }) {
           <div>
             <h1>Gold eval</h1>
             <p>Live G, C, and R, plus accuracy and tool calls.</p>
+            {versions ? <p className="versions">{versions}</p> : null}
           </div>
           <div className="who">
             <span>{username}</span>

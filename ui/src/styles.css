@@ -54,6 +54,13 @@ header.banner p {
   margin: 8px 0 0;
   color: #f3ddd6;
 }
+.versions {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+header.banner .versions { color: #f3ddd6; }
+.login-card .versions { color: var(--muted); }
 .banner-inner,
 .app main {
   max-width: 880px;

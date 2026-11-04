@@ -39,6 +39,21 @@ def gateway_base() -> str:
     return os.environ.get("CAPABILITIES_GATEWAY_URL", "").strip().rstrip("/")
 
 
+def gateway_version() -> str:
+    """Version from the capabilities gateway /health. Blank when it cannot be read."""
+    base = gateway_base()
+    if not base:
+        return ""
+    try:
+        response = httpx.get(f"{base}/health", timeout=1.5)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return ""
+    version = payload.get("version") if isinstance(payload, dict) else ""
+    return str(version).strip() if version else ""
+
+
 def _agent_dbg(hid: str, loc: str, msg: str, extra: dict[str, Any] | None = None) -> None:
     # #region agent log
     raw = os.environ.get("CAPABILITIES_GATEWAY_URL")
