@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+from cre_rentroll import __version__
 from cre_rentroll.run_events import emit
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
@@ -590,7 +591,7 @@ def _ensure_mcp_session() -> None:
                 "params": {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "clientInfo": {"name": "cre-deal-rentroll", "version": "0.1.0"},
+                    "clientInfo": {"name": "cre-deal-rentroll", "version": __version__},
                 },
             },
         )

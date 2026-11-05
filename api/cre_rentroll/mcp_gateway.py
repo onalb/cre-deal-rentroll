@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from cre_rentroll import __version__
+
 _MCP_HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
@@ -149,7 +151,7 @@ def _ensure_session(timeout: float) -> None:
             "params": {
                 "protocolVersion": "2025-03-26",
                 "capabilities": {},
-                "clientInfo": {"name": "cre-deal-rentroll", "version": "0.1.0"},
+                "clientInfo": {"name": "cre-deal-rentroll", "version": __version__},
             },
         },
         timeout,
