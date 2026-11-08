@@ -430,19 +430,6 @@ def run_task(
                 return outcome
             note = reflect.on_tool_error("agent", str(exc))
             emit("error", note)
-            # #region agent log
-            try:
-                from cre_rentroll.capabilities_client import _agent_dbg
-
-                _agent_dbg(
-                    "C",
-                    "harness.py:_invoke_react_except",
-                    "run_agent raised",
-                    {"exc_type": type(exc).__name__, "exc": str(exc)[:200]},
-                )
-            except Exception:
-                pass
-            # #endregion
             if "replan" in note.lower():
                 emit("replan", note)
             draft = f"{note}\n{exc}"
@@ -768,7 +755,7 @@ def _emit_if_reused_memory(
     emit(
         "memory_reuse",
         "No vault MCP tool this turn, but the draft used roll numbers. "
-        "Python always auto-retrieves AgentCore Memory + Dynamo FACT# and prior chat; "
+        "Python always auto-retrieves AgentCore Memory + this session's facts and prior chat; "
         "it does not regex the question. The LLM skipped query_units — it already had those values in context.",
     )
 

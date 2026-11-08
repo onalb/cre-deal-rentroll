@@ -18,32 +18,39 @@ SLOT_KEYS = (
 )
 
 
+TRACE_KEEP = 25
+
+
 class MemoryStore:
-    """Strands-shaped MemoryStore: search / add over Dynamo FACT# slots."""
+    """Strands-shaped MemoryStore: search / add over this session's fact slots."""
 
     def __init__(self, username: str):
         self.username = username
 
     def search(self, query: str = "") -> list[dict[str, Any]]:
-        from cre_rentroll import dynamo
+        from cre_rentroll import vault
 
-        items = dynamo.query_prefix(self.username, "FACT#")
+        facts = vault.load_session(self.username).get("facts") or {}
         q = query.lower().strip()
         out = []
-        for it in items:
-            slot = str(it.get("sk", "")).removeprefix("FACT#")
-            if not q or q in slot or q in str(it.get("value", "")).lower():
-                out.append({"slot": slot, "value": it.get("value"), "sk": it.get("sk")})
+        for slot, value in facts.items():
+            if not q or q in str(slot).lower() or q in str(value).lower():
+                out.append({"slot": slot, "value": value})
         return out
 
     def add(self, slot: str, value: Any, *, overwrite: bool = False) -> None:
-        from cre_rentroll import dynamo
+        from cre_rentroll import vault
 
-        sk = f"FACT#{slot}"
-        existing = dynamo.get_item(self.username, sk)
-        if existing and not overwrite:
+        sess = vault.load_session(self.username)
+        facts = dict(sess.get("facts") or {})
+        if slot in facts and not overwrite:
             return
-        dynamo.put_item(self.username, sk, {"slot": slot, "value": value})
+        facts[slot] = value
+        vault.save_session(
+            self.username,
+            list(sess.get("messages") or []),
+            facts=facts,
+        )
 
 
 def retrieve_facts(username: str) -> dict[str, Any]:
@@ -62,11 +69,11 @@ def facts_prompt(username: str) -> str:
         ac_lines = []
     parts: list[str] = []
     if lines:
-        parts.append("Known deal facts (Dynamo LTM, auto-injected):\n" + "\n".join(lines))
+        parts.append("Known deal facts (this session, auto-injected):\n" + "\n".join(lines))
     if ac_lines:
         parts.append("AgentCore Memory records:\n" + "\n".join(f"- {x}" for x in ac_lines[:8]))
     if not parts:
-        return "No LTM FACT# slots yet for this user."
+        return "No session fact slots yet for this user."
     return "\n".join(parts)
 
 
@@ -104,14 +111,15 @@ def write_trace(
     stop_reason: str,
     preview: str = "",
 ) -> None:
-    from cre_rentroll import dynamo
+    from cre_rentroll import vault
 
     ts = datetime.now(timezone.utc).isoformat()
     qh = hashlib.sha256(question.encode("utf-8")).hexdigest()[:16]
-    dynamo.put_item(
-        username,
-        f"TRACE#{ts}",
+    sess = vault.load_session(username)
+    traces = list(sess.get("traces") or [])
+    traces.append(
         {
+            "at": ts,
             "run_id": run_id,
             "question_hash": qh,
             "tools_called": tools_called,
@@ -122,8 +130,20 @@ def write_trace(
             "retry": scores.get("retry", False),
             "stop_reason": stop_reason,
             "answer_preview": (preview or "")[:400],
-        },
+        }
     )
+    vault.save_session(
+        username,
+        list(sess.get("messages") or []),
+        traces=traces[-TRACE_KEEP:],
+    )
+
+
+def list_traces(username: str) -> list[dict[str, Any]]:
+    from cre_rentroll import vault
+
+    traces = list(vault.load_session(username).get("traces") or [])
+    return traces[-TRACE_KEEP:]
 
 
 class InMemoryStore:

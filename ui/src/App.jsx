@@ -387,7 +387,7 @@ export default function App() {
           <h1>Username only</h1>
           <p className="lede">
             No password, no register. First use creates <code>USER#you / PROFILE</code> in
-            Dynamo <code>ml_interview</code>. Chat, LTM FACT#, and TRACE# follow that user.
+            Dynamo <code>ml_interview</code>. Chat, roll facts, and run traces stay on this session.
           </p>
           <form onSubmit={login}>
             <input
@@ -525,7 +525,7 @@ export default function App() {
             <span className="vault-spine">Vault</span>
           </button>
           <div className="vault-body" id="vault-body" aria-hidden={!vaultExpanded}>
-            <h2>Vault / LTM</h2>
+            <h2>Vault</h2>
             <dl>
               <dt>geo_confidence</dt>
               <dd>{session?.vault?.geo_confidence || "—"}</dd>
@@ -533,10 +533,10 @@ export default function App() {
             <ul className="facts">
               {Object.entries(session?.facts || {}).map(([k, v]) => (
                 <li key={k}>
-                  <code>FACT#{k}</code> {String(v)}
+                  <code>{k}</code> {String(v)}
                 </li>
               ))}
-              {!session?.facts || Object.keys(session.facts).length === 0 ? <li>No FACT# yet</li> : null}
+              {!session?.facts || Object.keys(session.facts).length === 0 ? <li>No session facts yet</li> : null}
             </ul>
           </div>
         </aside>

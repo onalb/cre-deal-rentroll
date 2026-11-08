@@ -70,16 +70,46 @@ def test_agent_query_units_posts_capabilities_not_agentcore(monkeypatch):
     assert called["deal"][1]["occupancy"] == "Occupied"
 
 
-def test_write_trace_preview_optional(monkeypatch):
-    stored = {}
+def test_save_session_keeps_facts_and_traces(monkeypatch):
+    table: dict[tuple[str, str], dict] = {}
 
-    def fake_put(pk, sk, item):
-        stored["item"] = item
+    def fake_get(username, sk):
+        return table.get((username, sk))
 
+    def fake_put(username, sk, attrs):
+        table[(username, sk)] = {"pk": username, "sk": sk, **attrs}
+
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", fake_get)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", fake_put)
+    from cre_rentroll import vault
+
+    vault.save_session("ada", [], facts={"unit_count": 4}, traces=[{"run_id": "t1"}])
+    vault.save_session("ada", [{"role": "user", "content": "occupancy"}])
+    loaded = vault.load_session("ada")
+    assert loaded["messages"][0]["content"] == "occupancy"
+    assert loaded["facts"]["unit_count"] == 4
+    assert loaded["traces"][0]["run_id"] == "t1"
+    assert "FACT#" not in table
+    assert not any(sk.startswith("TRACE#") for _, sk in table)
+
+
+def test_write_trace_preview_optional(monkeypatch):
+    session = {"messages": [{"role": "user", "content": "q"}], "facts": {"unit_count": 3}, "traces": []}
+
+    def fake_load(_username):
+        return dict(session)
+
+    def fake_save(_username, messages, **extra):
+        session["messages"] = messages
+        session.update(extra)
+
+    monkeypatch.setattr("cre_rentroll.vault.load_session", fake_load)
+    monkeypatch.setattr("cre_rentroll.vault.save_session", fake_save)
     write_trace("burak", run_id="abc", question="q", tools_called=["query_units"], scores={}, stop_reason="ok")
-    assert stored["item"]["run_id"] == "abc"
-    assert stored["item"]["answer_preview"] == ""
+    assert session["traces"][0]["run_id"] == "abc"
+    assert session["traces"][0]["answer_preview"] == ""
+    assert session["facts"]["unit_count"] == 3
+    assert session["messages"][0]["content"] == "q"
 
 
 def test_agentcore_box_prefixes_are_stable():

@@ -18,7 +18,7 @@ from cre_rentroll.settings import openai_api_key
 from cre_rentroll import dynamo, harness, run_events, vault
 from cre_rentroll.capabilities_client import gateway_version
 from gold_eval.routes import router as gold_eval_router
-from cre_rentroll.memory import retrieve_facts
+from cre_rentroll.memory import list_traces, retrieve_facts
 
 
 @asynccontextmanager
@@ -116,8 +116,7 @@ def session(x_username: str | None = Header(default=None)) -> dict[str, Any]:
 @app.get("/api/traces")
 def traces(x_username: str | None = Header(default=None)) -> dict[str, Any]:
     user = _user(x_username)
-    items = dynamo.query_prefix(user, "TRACE#")
-    return {"traces": items[-25:]}
+    return {"traces": list_traces(user)}
 
 
 def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, Any]:
