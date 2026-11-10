@@ -3,7 +3,7 @@ import sys
 from types import ModuleType
 
 from cre_rentroll.agents import (
-    BOOK,
+    DEAL,
     INVENTORIES,
     _emit_react_turn,
     _short_tool_args,
@@ -290,7 +290,7 @@ def _install_fake_strands(monkeypatch, agent_cls, model_cls=None):
     monkeypatch.setitem(sys.modules, "strands", strands_mod)
     monkeypatch.setitem(sys.modules, "strands.models", models_mod)
     monkeypatch.setitem(sys.modules, "strands.models.openai", openai_mod)
-    monkeypatch.setattr("cre_rentroll.agents._setup_tools_strands", lambda _names: [])
+    monkeypatch.setattr("cre_rentroll.agents._setup_tools_strands", lambda *_a, **_k: [])
     monkeypatch.setattr("cre_rentroll.agents.openai_client_args", lambda: {})
 
 
@@ -328,7 +328,7 @@ def test_run_strands_single_react_invoke_no_schema(monkeypatch):
     seen: list[dict] = []
     token = bind(seen.append)
     try:
-        draft = run_strands("Abstract the roll", BOOK, "")
+        draft = run_strands("Abstract the roll", DEAL, "")
     finally:
         reset(token)
     assert "92.07%" in draft
@@ -356,7 +356,7 @@ def test_run_strands_does_not_invoke_schema_after_tools(monkeypatch):
 
     _install_fake_strands(monkeypatch, FakeAgent)
     reset_turn("tester")
-    draft = run_strands("Abstract the roll", BOOK, "")
+    draft = run_strands("Abstract the roll", DEAL, "")
     assert len(calls) == 1
     assert "structured_output_model" not in calls[0]
     assert calls[0].get("limits") == {"turns": 12}
@@ -375,7 +375,7 @@ def test_run_strands_copy_context_records_from_worker(monkeypatch):
 
     _install_fake_strands(monkeypatch, FakeAgent)
     reset_turn("tester")
-    run_strands("Abstract the roll", BOOK, "")
+    run_strands("Abstract the roll", DEAL, "")
     names = [row["name"] for row in traces()]
     assert "create_plan" in names
 
@@ -406,7 +406,7 @@ def test_run_strands_score_gcr_no_schema_invoke(monkeypatch):
     )
     reset_turn("tester")
     set_eval_query("What is occupancy?")
-    draft = run_strands("Abstract the roll", BOOK, "")
+    draft = run_strands("Abstract the roll", DEAL, "")
     assert len(calls) == 1
     assert all("structured_output_model" not in c for c in calls)
     assert "score_gcr" in [row["name"] for row in traces()]
@@ -490,7 +490,7 @@ def test_run_strands_callback_emits_react_turns(monkeypatch):
     seen: list[dict] = []
     token = bind(seen.append)
     try:
-        run_strands("Abstract the roll", BOOK, "")
+        run_strands("Abstract the roll", DEAL, "")
     finally:
         reset(token)
     react = _react_msgs(seen)
@@ -575,7 +575,7 @@ def test_run_strands_wrapped_create_emits_react_turns(monkeypatch):
     seen: list[dict] = []
     token = bind(seen.append)
     try:
-        run_strands("Abstract the roll", BOOK, "")
+        run_strands("Abstract the roll", DEAL, "")
     finally:
         reset(token)
     react = _react_msgs(seen)
@@ -646,7 +646,7 @@ def test_run_openai_tools_no_json_mode_after_tool_loop(monkeypatch):
     seen: list[dict] = []
     token = bind(seen.append)
     try:
-        draft = run_openai_tools("Abstract the roll", BOOK, "")
+        draft = run_openai_tools("Abstract the roll", DEAL, "")
     finally:
         reset(token)
     assert "92.07%" in draft

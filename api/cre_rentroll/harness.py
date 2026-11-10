@@ -4,7 +4,7 @@ import uuid
 from typing import Any
 
 from cre_rentroll import reflect, turn_ctx, vault
-from cre_rentroll.agents import BOOK, Inventory, RateLimitedError, RATE_LIMIT_TEXT, is_rate_limited, run_agent
+from cre_rentroll.agents import DEAL, Inventory, RateLimitedError, RATE_LIMIT_TEXT, is_rate_limited, run_agent
 from cre_rentroll.chips import allow_predict, filter_book_tools
 from cre_rentroll.settings import openai_api_key
 from cre_rentroll.eval_service import cited_locate_map_draft, format_eval_log, gate
@@ -27,17 +27,17 @@ from cre_rentroll.run_events import emit, emit_stop_and_summary
 
 def inventory_for(_message: str) -> list[Inventory]:
     """Book menu: one agent, all tools. Intent is create_plan, not this picker."""
-    return [BOOK]
+    return [DEAL]
 
 
 def inventories_from_intent(_intent: str) -> list[Inventory]:
     """One book agent — never used to pick a specialist."""
-    return [BOOK]
+    return [DEAL]
 
 
 def decompose(message: str, inventories: list[Inventory] | None = None) -> list[tuple[Inventory, str]]:
     """One book agent; create_plan / update_plan / update_plan_status inside Strands is the plan."""
-    inv = (inventories or [BOOK])[0]
+    inv = (inventories or [DEAL])[0]
     return [(inv, message)]
 
 
@@ -330,10 +330,8 @@ def run_task(
             if "score_gcr" not in names:
                 names = (*names, "score_gcr")
         else:
-            # Offline fallback: BOOK_TOOLS is the hardcoded menu when no
-            # gateway is configured (tests, local dev). The gateway answer
-            # above replaces it whenever MCP_URL is set.
-            names = filter_book_tools(BOOK.tool_names, shown_user, username=username)
+            # No gateway configured: there is no local tool menu.
+            names = ()
         single = single_tool_intent(
             shown_user, has_vault=has_vault, predict_followup=predict_followup
         )
@@ -346,14 +344,14 @@ def run_task(
                 n for n in names if n not in ("create_plan", "update_plan_status")
             )
             turn_ctx.set_planless(single)
-        skills = BOOK.skills
+        skills = DEAL.skills
         if allow_predict(shown_user, username=username):
             skills = (*skills, "rr-predict")
-        inv = Inventory(BOOK.name, names, skills, specs=gateway_specs)
+        inv = Inventory(DEAL.name, names, skills, specs=gateway_specs)
     else:
         # Prompt-only OOS was ignored by ReAct (always create_plan / web_search).
         # Offer no tools, skills, Gateway, or Memory so chitchat cannot MCP.
-        inv = Inventory(BOOK.name, (), ())
+        inv = Inventory(DEAL.name, (), ())
     subgoals = decompose(message, [inv])
     turn_ctx.set_plan([inv.name], list(inv.skills))
     predict_on = cre_ask and allow_predict(shown_user, username=username)

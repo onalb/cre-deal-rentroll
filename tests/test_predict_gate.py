@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from cre_rentroll.agents import BOOK
 from cre_rentroll.chips import allow_predict, filter_book_tools
+
+_NAMES = ("query_units", "ask_prediction_agent", "web_search")
 from cre_rentroll.predict_followup import reset_predict_state
 
 
@@ -15,12 +16,12 @@ def test_predict_menu_follows_the_question():
 
 
 def test_filter_hides_predict_unless_the_question_is_forward():
-    names = filter_book_tools(BOOK.tool_names, "occupancy today")
+    names = filter_book_tools(_NAMES, "occupancy today")
     assert "ask_prediction_agent" not in names
     assert "query_units" in names
-    shown = filter_book_tools(BOOK.tool_names, "What occupancy do you predict?")
+    shown = filter_book_tools(_NAMES, "What occupancy do you predict?")
     assert "ask_prediction_agent" in shown
-    none = filter_book_tools(BOOK.tool_names, "forecast expirations and MTM")
+    none = filter_book_tools(_NAMES, "forecast expirations and MTM")
     assert "ask_prediction_agent" in none
 
 
@@ -50,5 +51,5 @@ def test_followup_keeps_predict_tool(monkeypatch):
         lambda user: user == "tester",
     )
     assert allow_predict("Plan A", username="tester") is True
-    names = filter_book_tools(BOOK.tool_names, "Plan A", username="tester")
+    names = filter_book_tools(_NAMES, "Plan A", username="tester")
     assert "ask_prediction_agent" in names

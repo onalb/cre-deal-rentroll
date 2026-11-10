@@ -3,7 +3,7 @@
 import inspect
 import json
 
-from cre_rentroll.agents import BOOK, _run_openai_tools_loop
+from cre_rentroll.agents import _run_openai_tools_loop
 from cre_rentroll.capabilities_client import GATEWAY_REQUIRED
 from cre_rentroll.harness import run_task
 from cre_rentroll.predict_followup import reset_predict_state
@@ -14,9 +14,8 @@ from cre_rentroll.turn_ctx import reset_turn
 
 
 def test_prediction_tool_is_on_the_book_menu():
-    assert "ask_prediction_agent" in BOOK.tool_names
-    assert "ask_vacancy_agent" not in BOOK.tool_names
-    assert "ask_vacancy" not in BOOK.tool_names
+    assert "ask_vacancy_agent" not in TOOL_IMPLS
+    assert "ask_vacancy" not in TOOL_IMPLS
     assert TOOL_IMPLS["ask_prediction_agent"].__wrapped__ is ask_prediction_agent
     source = inspect.getsource(ask_prediction_agent)
     assert "RR_PREDICT_URL" not in source

@@ -279,7 +279,7 @@ def test_cfn_keeps_runtime_arn_on_apprunner():
 
 
 def test_invoke_react_calls_harness_note(monkeypatch):
-    from cre_rentroll.agents import BOOK
+    from cre_rentroll.agents import DEAL
     from cre_rentroll.harness import _invoke_react
 
     called: list[int] = []
@@ -287,7 +287,7 @@ def test_invoke_react_calls_harness_note(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", lambda *a, **k: "draft")
     monkeypatch.setattr("cre_rentroll.turn_ctx.llm_call_kinds", lambda: [])
     monkeypatch.setattr("cre_rentroll.turn_ctx.add_llm_if_unchanged", lambda *a, **k: None)
-    _invoke_react(BOOK, "prompt", "facts")
+    _invoke_react(DEAL, "prompt", "facts")
     assert called == [1]
 
 

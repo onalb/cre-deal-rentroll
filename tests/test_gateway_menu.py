@@ -1,9 +1,8 @@
-"""Gateway-driven menu: the role-filtered tools/list answer is the base menu
-when MCP is configured; BOOK_TOOLS is the offline fallback when it is not."""
+"""Gateway-driven menu: the role-filtered tools/list answer is the menu.
+With no gateway configured, the turn has no tools."""
 
 from __future__ import annotations
 
-from cre_rentroll.agents import BOOK
 from cre_rentroll.harness import run_task
 from cre_rentroll.predict_followup import reset_predict_state
 from cre_rentroll.run_events import bind, reset
@@ -120,7 +119,7 @@ def test_gateway_menu_keeps_planless_filtering(monkeypatch):
     )
 
 
-def test_offline_book_menu_when_mcp_unset(monkeypatch):
+def test_no_tools_when_mcp_unset(monkeypatch):
     monkeypatch.delenv("MCP_URL", raising=False)
     monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
 
@@ -138,10 +137,7 @@ def test_offline_book_menu_when_mcp_unset(monkeypatch):
         )
     finally:
         reset(token)
-    # Offline fallback: BOOK.tool_names (the ask is not forward-looking, so
-    # the predict gate removes ask_prediction_agent).
-    expected = tuple(n for n in BOOK.tool_names if n != "ask_prediction_agent")
-    assert captured["inv"].tool_names == expected
+    assert captured["inv"].tool_names == ()
 
 
 def test_mcp_role_header_defaults_to_deal(monkeypatch):

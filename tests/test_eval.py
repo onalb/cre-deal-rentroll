@@ -20,7 +20,8 @@ from cre_rentroll.eval_service import (
     vault_calc_log_label,
     vault_calc_ok,
 )
-from cre_rentroll.agents import BOOK
+from cre_rentroll.agents import DEAL
+from menu_inventory import WITH_TOOLS
 from cre_rentroll.harness import inventories_from_intent, inventory_for
 from cre_rentroll.memory import InMemoryStore
 from cre_rentroll.schemas import CanonicalRentRoll, EvalScores, UnitRow
@@ -28,12 +29,10 @@ from cre_rentroll.turn_ctx import llm_call_count
 
 
 def test_how_many_units_is_cre():
-    assert inventory_for("How many units?") == [BOOK]
-    assert inventories_from_intent("abstract") == [BOOK]
-    assert inventories_from_intent("geo") == [BOOK]
-    assert inventories_from_intent("underwrite") == [BOOK]
-    assert "osm_geocode" in BOOK.tool_names
-    assert "query_units" in BOOK.tool_names
+    assert inventory_for("How many units?") == [DEAL]
+    assert inventories_from_intent("abstract") == [DEAL]
+    assert inventories_from_intent("geo") == [DEAL]
+    assert inventories_from_intent("underwrite") == [DEAL]
 
 
 def test_q1_do_not_geocode_is_prompt_not_inventory_lock():
@@ -44,9 +43,8 @@ def test_q1_do_not_geocode_is_prompt_not_inventory_lock():
         "vacant count, MTM if present as of 01/01/2021. Cite computed totals. "
         "Do not geocode or search."
     )
-    assert inventory_for(q) == [BOOK]
-    assert "osm_geocode" in BOOK.tool_names
-    sys = system_prompt(BOOK, "").lower()
+    assert inventory_for(q) == [DEAL]
+    sys = system_prompt(WITH_TOOLS, "").lower()
     assert "do not geocode" in sys
     assert "pure rent-roll" in sys or "q1" in sys
     assert "mtm_count" in sys

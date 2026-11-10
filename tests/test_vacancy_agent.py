@@ -2,18 +2,14 @@
 
 import inspect
 
-from cre_rentroll.agents import BOOK
 from cre_rentroll.capabilities_client import CAPABILITY_TOOLS
 from cre_rentroll.tools import TOOL_IMPLS, WORK_TOOL_NAMES, ask_prediction_agent
 
 
 def test_ask_vacancy_agent_is_off_the_menu_everywhere():
-    assert "ask_vacancy_agent" not in BOOK.tool_names
     assert "ask_vacancy_agent" not in TOOL_IMPLS
     assert "ask_vacancy_agent" not in WORK_TOOL_NAMES
     assert "ask_vacancy_agent" not in CAPABILITY_TOOLS
-    assert "ask_vacancy" not in BOOK.tool_names
-    assert "ask_prediction_agent" in BOOK.tool_names
     assert "ask_prediction_agent" in TOOL_IMPLS
 
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 _GATEWAY_ROOT = Path(r"C:\Users\burak\capabilities-gateway")
 _GATEWAY_SKILLS = _GATEWAY_ROOT / "skills"
 if _GATEWAY_ROOT.is_dir() and str(_GATEWAY_ROOT) not in sys.path:

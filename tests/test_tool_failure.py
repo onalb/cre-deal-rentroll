@@ -1,6 +1,7 @@
 """Generic tool-failure behavior: no loop, no operator leak, no canned copy."""
 
-from cre_rentroll.agents import BOOK, system_prompt
+from cre_rentroll.agents import DEAL, system_prompt
+from menu_inventory import WITH_TOOLS
 from cre_rentroll.harness import _user_facing_draft, run_task
 from cre_rentroll.present import is_operator_leak
 from cre_rentroll.reflect import on_tool_error
@@ -78,7 +79,7 @@ def test_user_facing_draft_strips_plan_checklist_leak():
 
 
 def test_prompt_forbids_search_retry_and_operator_leak():
-    sys = system_prompt(BOOK, "").lower()
+    sys = system_prompt(WITH_TOOLS, "").lower()
     assert "do not call web_search again" in sys
     assert "never copy need replan" in sys
     assert "python does not write that answer" in sys

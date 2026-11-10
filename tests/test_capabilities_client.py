@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from cre_rentroll.agents import BOOK, load_skill_text
+from cre_rentroll.agents import load_skill_text
 from cre_rentroll.capabilities_client import (
     GATEWAY_REQUIRED,
     apply_gateway_menu,
@@ -22,31 +22,28 @@ from cre_rentroll.tools import ask_prediction_agent, create_plan, query_units
 from cre_rentroll.turn_ctx import reset_turn
 
 
+_SAMPLE = ("create_plan", "query_units", "ask_prediction_agent", "score_gcr")
+
+
 def test_menu_keeps_deal_tool_names_when_unset(monkeypatch):
     monkeypatch.delenv("CAPABILITIES_GATEWAY_URL", raising=False)
     monkeypatch.delenv("MCP_URL", raising=False)
     monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
-    names = filter_book_tools(BOOK.tool_names, "how many units")
-    assert "ask_vacancy_agent" not in names
+    names = filter_book_tools(_SAMPLE, "how many units")
     assert "ask_prediction_agent" not in names
-    assert "ask_vacancy" not in names
     assert "create_plan" in names
     assert "query_units" in names
     assert deal_mcp_url() == ""
-    assert apply_gateway_menu(BOOK.tool_names) == BOOK.tool_names
+    assert apply_gateway_menu(_SAMPLE) == _SAMPLE
 
 
 def test_menu_keeps_the_same_names_when_gateway_is_set(monkeypatch):
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
-    names = filter_book_tools(BOOK.tool_names, "how many units")
-    assert "ask_vacancy_agent" not in names
-    assert "ask_vacancy" not in names
+    names = filter_book_tools(_SAMPLE, "how many units")
     assert "create_plan" in names
     assert "score_gcr" in names
-    assert "parse_rent_roll_file" not in names
-    assert "fit_vacancy" not in names
     assert deal_mcp_url() == "https://example.test/mcp"
-    assert apply_gateway_menu(BOOK.tool_names) == BOOK.tool_names
+    assert apply_gateway_menu(_SAMPLE) == _SAMPLE
 
 
 def test_create_plan_requires_gateway_when_unset(monkeypatch):

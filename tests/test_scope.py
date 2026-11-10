@@ -1,7 +1,7 @@
 import json
 
 import cre_rentroll.scope as scope_mod
-from cre_rentroll.agents import BOOK
+from cre_rentroll.agents import DEAL
 from cre_rentroll.harness import run_task
 from cre_rentroll.run_events import bind, reset
 from cre_rentroll.scope import NEED_FILE_TEXT, OOS_TEXT, classify_scope, in_scope, parse_scope_token
@@ -296,10 +296,11 @@ def test_run_task_calls_classify_scope_then_empty_inventory(monkeypatch):
 
 
 def test_system_prompt_identity_chitchat_is_oos_not_interview_wording():
-    from cre_rentroll.agents import BOOK, system_prompt
+    from cre_rentroll.agents import system_prompt
+    from menu_inventory import WITH_TOOLS
 
-    has = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n").lower()
-    empty = system_prompt(BOOK, "VAULT EMPTY: no rent roll is ingested.\n").lower()
+    has = system_prompt(WITH_TOOLS, "VAULT HAS a rent roll for this session.\n").lower()
+    empty = system_prompt(WITH_TOOLS, "VAULT EMPTY: no rent roll is ingested.\n").lower()
     for blob in (has, empty):
         assert "identity" in blob
         assert "agent's name" in blob or "the agent's name" in blob
@@ -335,7 +336,7 @@ def _assert_oos_no_tools(out, captured, seen, text: str):
     assert captured["n"] == 1
     assert captured["inv"].tool_names == ()
     assert captured["inv"].skills == ()
-    assert captured["inv"].name == BOOK.name
+    assert captured["inv"].name == DEAL.name
     assert out.text == text
     assert out.kind == "out_of_scope"
     assert out.stop_reason == "out_of_scope"

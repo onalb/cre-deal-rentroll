@@ -801,7 +801,10 @@ def test_harness_mocked_agent_judge_count_and_tags(monkeypatch):
     assert llm_call_count() == 2
     inv_msgs = [row["message"] for row in seen if row["step"] == "inventory"]
     plan_msgs = [row["message"] for row in seen if row["step"] == "plan"]
-    assert any("(LLM)" not in m and "full tool menu" in m for m in inv_msgs)
+    assert any(
+        "(LLM)" not in m and "planless menu" in m and "query_units" in m
+        for m in inv_msgs
+    )
     assert not any("RollAbstractor" in m for m in inv_msgs)
     assert not any("RollAbstractor" in m for m in plan_msgs)
     assert not any("skip decompose" in m for m in plan_msgs)

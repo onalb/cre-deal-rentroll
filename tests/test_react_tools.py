@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from cre_rentroll.agents import BOOK, INVENTORIES
+from cre_rentroll.agents import DEAL, INVENTORIES
+from menu_inventory import WITH_TOOLS
 from cre_rentroll.harness import run_task, session_prompt
 from cre_rentroll.run_events import annotate_message, bind, reset, tool_message
 from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
@@ -40,22 +41,14 @@ def test_react_tools_in_tool_impls():
     assert TOOL_IMPLS["update_plan_status"] is update_plan_status
     assert TOOL_IMPLS["reflection"] is reflection
     for inv in INVENTORIES.values():
-        assert "create_plan" in inv.tool_names
-        assert "update_plan" in inv.tool_names
-        assert "update_plan_status" in inv.tool_names
-        assert "reflection" in inv.tool_names
-        assert "score_gcr" in inv.tool_names
-        assert "query_units" in inv.tool_names
-        assert "compute_income" in inv.tool_names
-        assert "osm_geocode" in inv.tool_names
+        assert inv.tool_names == ()
 
 
 def test_book_tools_are_tool_impls():
     from cre_rentroll.agents import agent_tool_impls
 
     impls = agent_tool_impls()
-    for name in BOOK.tool_names:
-        assert name in TOOL_IMPLS
+    for name in TOOL_IMPLS:
         assert name in impls
         assert impls[name].__wrapped__ is TOOL_IMPLS[name]
 
@@ -606,7 +599,7 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     from cre_rentroll.agents import system_prompt
     from cre_rentroll.tools import reflection as reflection_fn
 
-    sys = system_prompt(BOOK, "").lower()
+    sys = system_prompt(WITH_TOOLS, "").lower()
     assert "first action" in sys
     assert "always call create_plan" in sys
     assert "never skip create_plan" in sys
@@ -673,7 +666,7 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "do not pad with abstract" in sys
     assert "never the out-of-scope refuse" in sys
     assert "including locate/map" in sys
-    has = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n").lower()
+    has = system_prompt(WITH_TOOLS, "VAULT HAS a rent roll for this session.\n").lower()
     assert "please attach a rent-roll csv" not in has
     assert "already ingested" in has
     assert "spreadsheet filename" in has or "rent roll" in has
@@ -689,7 +682,7 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     assert "idle weekend weather" in has
     assert "flood" not in has
     assert "population" not in has
-    empty = system_prompt(BOOK, "VAULT EMPTY: no rent roll is ingested.\n").lower()
+    empty = system_prompt(WITH_TOOLS, "VAULT EMPTY: no rent roll is ingested.\n").lower()
     assert "please attach a rent-roll csv" in empty
     assert "identity" in empty
     assert "out-of-scope refuse" in empty or "need-file" in empty
@@ -789,9 +782,9 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
 
 
 def test_agents_openai_specs_include_react_tools():
-    from cre_rentroll.agents import INVENTORIES, _openai_specs
+    from cre_rentroll.agents import _openai_specs
 
-    names = BOOK.tool_names
+    names = tuple(TOOL_IMPLS)
     spec = _openai_specs(names)
     fnames = [s["function"]["name"] for s in spec]
     create_desc = next(
@@ -1044,11 +1037,11 @@ def test_rent_roll_definition_prompt_does_not_always_plan_multi3():
 
     q = "What's a rent roll?"
     assert in_scope(q)
-    sys = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n").lower()
+    sys = system_prompt(WITH_TOOLS, "VAULT HAS a rent roll for this session.\n").lower()
     create_doc = " ".join((create_plan.__doc__ or "").lower().split())
     create_desc = next(
         s["function"]["parameters"]["properties"]["tasks"]["description"]
-        for s in _openai_specs(BOOK.tool_names)
+        for s in _openai_specs(tuple(TOOL_IMPLS))
         if s["function"]["name"] == "create_plan"
     ).lower()
     history = []
@@ -1088,8 +1081,8 @@ def test_area_property_value_prompt_is_web_search_not_need_file(monkeypatch):
     from cre_rentroll.tools import create_plan as create_plan_fn
 
     q = "What's the average property value in that area?"
-    empty = system_prompt(BOOK, "VAULT EMPTY: no rent roll is ingested.\n")
-    has = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n")
+    empty = system_prompt(WITH_TOOLS, "VAULT EMPTY: no rent roll is ingested.\n")
+    has = system_prompt(WITH_TOOLS, "VAULT HAS a rent roll for this session.\n")
     follow = session_prompt(
         q,
         [
@@ -1103,7 +1096,7 @@ def test_area_property_value_prompt_is_web_search_not_need_file(monkeypatch):
     create_doc = " ".join((create_plan_fn.__doc__ or "").split())
     create_desc = next(
         s["function"]["parameters"]["properties"]["tasks"]["description"]
-        for s in _openai_specs(BOOK.tool_names)
+        for s in _openai_specs(tuple(TOOL_IMPLS))
         if s["function"]["name"] == "create_plan"
     )
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
@@ -1141,7 +1134,7 @@ def test_vault_has_locate_correction_never_need_file_last_message_wins(monkeypat
     from cre_rentroll.scope import NEED_FILE_TEXT
 
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "FACT#property_name=La Cordoba")
-    has = system_prompt(BOOK, "VAULT HAS a rent roll for this session.\n")
+    has = system_prompt(WITH_TOOLS, "VAULT HAS a rent roll for this session.\n")
     facts = _facts_for_agent("tester", True)
     history = [
         {

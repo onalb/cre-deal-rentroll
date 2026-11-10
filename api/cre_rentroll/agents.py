@@ -48,23 +48,6 @@ def is_rate_limited(exc: BaseException) -> bool:
 
 InventoryName = str
 
-REACT_TOOLS = (
-    "create_plan",
-    "update_plan",
-    "update_plan_status",
-    "reflection",
-    "score_gcr",
-)
-BOOK_TOOLS = (
-    *REACT_TOOLS,
-    "query_units",
-    "compute_income",
-    "compute_noi",
-    "compute_cap_rate",
-    "ask_prediction_agent",
-    "osm_geocode",
-    "web_search",
-)
 BOOK_SKILLS = ("rent-roll-abstract", "citation-policy", "underwriting")
 
 
@@ -77,8 +60,8 @@ class Inventory:
     specs: tuple[dict[str, Any], ...] = ()
 
 
-BOOK = Inventory("DealRentroll", BOOK_TOOLS, BOOK_SKILLS)
-INVENTORIES = {"DealRentroll": BOOK}
+DEAL = Inventory("DealRentroll", (), BOOK_SKILLS)
+INVENTORIES = {"DealRentroll": DEAL}
 
 
 def load_skill_text(names: tuple[str, ...]) -> str:
