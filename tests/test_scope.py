@@ -49,6 +49,8 @@ def test_classify_prompt_is_generic_property_deal_area_vs_personal_chat():
     assert "web_search" in blob
     assert "no tools" in blob
     assert "oos only" in blob
+    assert "repeating an in-scope question is still in_scope" in blob
+    assert "already gave unit count" in blob
     assert "wrong country" in blob or "country or place" in blob
     assert "search the map" in blob
     assert "attached" in blob
