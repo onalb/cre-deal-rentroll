@@ -221,6 +221,7 @@ export default function App() {
   const bottom = useRef(null);
   const logEnd = useRef(null);
   const fileInput = useRef(null);
+  const chatSession = useRef(crypto.randomUUID());
   const visibleRunLog = compactArmed ? (logCompact ? compactRunLog(runLog) : runLog) : [];
 
   useEffect(() => {
@@ -349,6 +350,7 @@ export default function App() {
     try {
       const fd = new FormData();
       fd.append("message", outgoing);
+      fd.append("session_id", chatSession.current);
       if (outgoingFile) fd.append("file", outgoingFile);
       const data = await streamChat({
         username,
@@ -387,7 +389,7 @@ export default function App() {
           <h1>Username only</h1>
           <p className="lede">
             No password, no register. First use creates <code>USER#you / PROFILE</code> in
-            Dynamo <code>ml_interview</code>. Chat, roll facts, and run traces stay on this session.
+            Dynamo <code>ml_interview</code> keeps the profile. This visit's chat and vault stay until you refresh.
           </p>
           <form onSubmit={login}>
             <input

@@ -10,14 +10,20 @@ SESSION_SK = "SESSION#default"
 
 
 def save_roll(username: str, roll: CanonicalRentRoll) -> None:
-    dynamo.put_item(username, SK, {"roll": roll.model_dump()})
+    """Keep the parsed rent roll on this page visit. Dynamo is not the vault."""
+    del username
+    from cre_rentroll import turn_ctx
+    from cre_rentroll.chat_memory import save_roll as save_mem
+
+    save_mem(turn_ctx.chat_session(), roll)
 
 
 def load_roll(username: str) -> CanonicalRentRoll | None:
-    item = dynamo.get_item(username, SK)
-    if not item or "roll" not in item:
-        return None
-    return CanonicalRentRoll.model_validate(item["roll"])
+    del username
+    from cre_rentroll import turn_ctx
+    from cre_rentroll.chat_memory import load_roll as load_mem
+
+    return load_mem(turn_ctx.chat_session())
 
 
 def load_session(username: str) -> dict[str, Any]:
@@ -30,6 +36,17 @@ def load_session(username: str) -> dict[str, Any]:
         "facts": facts,
         "traces": traces,
     }
+
+
+def clear_messages(username: str) -> None:
+    """Drop the chat transcript. The rent roll and deal facts stay."""
+    save_session(username, [])
+
+
+def clear_visit(username: str) -> None:
+    """Page load. The previous visit's chat, rent roll, and deal facts are gone."""
+    save_session(username, [], facts={})
+    dynamo.delete_item(username, SK)
 
 
 def save_session(username: str, messages: list[dict[str, Any]], **extra: Any) -> None:

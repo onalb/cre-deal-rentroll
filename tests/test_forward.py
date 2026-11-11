@@ -62,6 +62,27 @@ def test_stamp_fills_route_username_and_as_of():
     assert "checklist" not in stamped
 
 
+def test_stamp_attaches_the_page_session_roll():
+    from cre_rentroll import turn_ctx, vault
+    from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
+
+    roll = CanonicalRentRoll(
+        layout="one_row",
+        property_name="Chambers",
+        units=[UnitRow(unit_id="1")],
+    )
+    spec = _units()
+    spec["input_schema"]["properties"]["roll"] = {"type": "object"}
+    turn_ctx.set_chat_session("visit-a")
+    try:
+        vault.save_roll("ada", roll)
+        stamped = stamp_arguments(spec, {"occupancy": "all"}, route="deal", username="ada")
+    finally:
+        turn_ctx.set_chat_session(None)
+    assert stamped["roll"]["property_name"] == "Chambers"
+    assert "roll" not in model_schema(spec)["properties"]
+
+
 def test_stamp_attaches_checklist_only_when_the_schema_has_it():
     stamped = stamp_arguments(
         _plan(),

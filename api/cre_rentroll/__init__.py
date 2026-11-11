@@ -1,3 +1,3 @@
 """CRE Deal Rentroll: Strands ReAct loop plus harness for a rent-roll web app."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.3"

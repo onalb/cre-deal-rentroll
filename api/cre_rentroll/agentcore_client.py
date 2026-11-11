@@ -144,6 +144,7 @@ def invoke_run_task(
     *,
     has_attachment: bool = False,
     ack_prefix: str = "",
+    session_id: str = "",
 ) -> ChatOutcome:
     arn = runtime_arn()
     client = boto3.client(
@@ -151,14 +152,23 @@ def invoke_run_task(
         region_name=os.environ.get("AWS_REGION", "us-east-1"),
         config=Config(read_timeout=120, retries={"max_attempts": 3, "mode": "standard"}),
     )
-    payload = json.dumps(
-        {
-            "username": username,
-            "prompt": message,
-            "has_attachment": has_attachment,
-            "ack_prefix": ack_prefix,
-        }
-    ).encode()
+    from cre_rentroll import vault
+    from cre_rentroll.memory import retrieve_facts
+
+    body: dict[str, Any] = {
+        "username": username,
+        "prompt": message,
+        "has_attachment": has_attachment,
+        "ack_prefix": ack_prefix,
+        "session_id": session_id,
+    }
+    roll = vault.load_roll(username)
+    if roll is not None:
+        body["roll"] = roll.model_dump(mode="json")
+    facts = retrieve_facts(username)
+    if facts:
+        body["facts"] = facts
+    payload = json.dumps(body).encode()
     try:
         resp = client.invoke_agent_runtime(
             agentRuntimeArn=arn,

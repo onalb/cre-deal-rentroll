@@ -138,10 +138,10 @@ def session_prompt(
     *,
     cre_ask: bool = True,
 ) -> str:
-    """Stuff stored SESSION user+assistant turns into the ReAct user prompt.
+    """Stuff this page session's user+assistant turns into the ReAct user prompt.
 
-    Dynamo already keeps messages; this does not add a new memory product.
-    Newest prior turns are kept if the transcript would exceed the limit.
+    The transcript lives in process memory for the page session id. A refresh
+    starts a new id. Newest prior turns are kept if the transcript would exceed the limit.
     The current user line is never dropped.
     """
     current = f"User: {(message or '').strip()}\n\n{_session_follow(planless, cre_ask=cre_ask)}"
@@ -181,7 +181,16 @@ def measure_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def ingest_attachment(username: str, filename: str, raw: bytes, *, persist: bool = True) -> ChatOutcome:
+def ingest_attachment(
+    username: str,
+    filename: str,
+    raw: bytes,
+    *,
+    persist: bool = True,
+    session_id: str = "",
+) -> ChatOutcome:
+    sid = (session_id or turn_ctx.chat_session() or "").strip()
+    turn_ctx.set_chat_session(sid)
     roll = ingest_bytes(filename, raw)
     vault.save_roll(username, roll)
     generate_from_roll(username, roll)
@@ -190,13 +199,15 @@ def ingest_attachment(username: str, filename: str, raw: bytes, *, persist: bool
         # File-only submit: the ingest pair is the whole exchange.
         # When a question rides along, main.py passes persist=False and the
         # ack is merged into run_task's single answer message instead.
-        sess = vault.load_session(username)
-        messages = list(sess.get("messages") or [])
+        from cre_rentroll.chat_memory import load as load_chat
+        from cre_rentroll.chat_memory import save as save_chat
+
+        messages = load_chat(sid)
         messages += [
             {"role": "user", "content": f"[attached {filename}]"},
             {"role": "assistant", "content": text, "kind": "ingest_ack"},
         ]
-        vault.save_session(username, messages)
+        save_chat(sid, messages)
     emit(
         "ingest",
         f"{roll.property_name or filename}, {roll.unit_count} units, parser={roll.layout}",
@@ -227,15 +238,18 @@ def run_task(
     skip_scope: bool = False,
     persist_as: str | None = None,
     ack_prefix: str = "",
+    session_id: str = "",
 ) -> ChatOutcome:
     from cre_rentroll.agentcore_client import invoke_run_task, should_invoke_remote
 
+    turn_ctx.set_chat_session(session_id)
     if should_invoke_remote() and not skip_scope:
         return invoke_run_task(
             username,
             message,
             has_attachment=has_attachment,
             ack_prefix=ack_prefix,
+            session_id=turn_ctx.chat_session(),
         )
     _ = has_attachment
     run_id = str(uuid.uuid4())[:8]
@@ -249,8 +263,10 @@ def run_task(
     asked = as_of_from_message(shown_user)
     turn_ctx.set_asked_as_of(asked)
     turn_ctx.set_eval_query(shown_user)
+    from cre_rentroll.chat_memory import load as load_chat
+
     sess = vault.load_session(username)
-    messages = list(sess.get("messages") or [])
+    messages = load_chat(turn_ctx.chat_session())
     retry_used = bool(sess.get("eval_retry_used"))
     roll = vault.load_roll(username)
     has_vault = roll is not None
@@ -685,7 +701,12 @@ def _persist(
         {"role": "user", "content": user_text},
         {"role": "assistant", "content": answer[:4000], "kind": outcome.kind},
     ]
-    vault.save_session(username, messages, eval_retry_used=False)
+    from cre_rentroll.chat_memory import save as save_chat
+
+    save_chat(turn_ctx.chat_session(), messages)
+    # The transcript, rent roll, and deal facts stay on the page session.
+    # This write keeps run traces and clears any leftover Dynamo transcript.
+    vault.save_session(username, [], eval_retry_used=False)
     try:
         write_trace(
             username,

@@ -29,6 +29,9 @@ class InvocationBody(BaseModel):
     username: str | None = None
     has_attachment: bool = False
     ack_prefix: str = ""
+    session_id: str = ""
+    roll: dict[str, Any] | None = None
+    facts: dict[str, Any] | None = None
     input: dict[str, Any] | None = None
 
 
@@ -46,6 +49,9 @@ def parse_payload(body: dict[str, Any] | InvocationBody) -> dict[str, Any]:
         "prompt": prompt,
         "has_attachment": bool(raw.get("has_attachment") or nested.get("has_attachment")),
         "ack_prefix": str(raw.get("ack_prefix") or nested.get("ack_prefix") or ""),
+        "session_id": str(raw.get("session_id") or nested.get("session_id") or ""),
+        "roll": raw.get("roll") if isinstance(raw.get("roll"), dict) else nested.get("roll"),
+        "facts": raw.get("facts") if isinstance(raw.get("facts"), dict) else nested.get("facts"),
     }
 
 
@@ -53,16 +59,34 @@ def _sse_data(payload: dict[str, Any]) -> bytes:
     return f"data: {json.dumps(payload, default=str)}\n\n".encode()
 
 
+def _seed_visit(args: dict[str, Any]) -> None:
+    """Copy the page-session vault into this process before the turn."""
+    from cre_rentroll import turn_ctx
+    from cre_rentroll.chat_memory import save_facts, save_roll
+    from cre_rentroll.schemas import CanonicalRentRoll
+
+    sid = str(args.get("session_id") or "")
+    turn_ctx.set_chat_session(sid)
+    raw = args.get("roll")
+    if isinstance(raw, dict):
+        save_roll(sid, CanonicalRentRoll.model_validate(raw))
+    facts = args.get("facts")
+    if isinstance(facts, dict) and facts:
+        save_facts(sid, facts)
+
+
 def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:
     from cre_rentroll.agentcore_platform import bind_workload_token, note_runtime
 
     bind_workload_token(headers)
     note_runtime()
+    _seed_visit(args)
     return harness.run_task(
         args["username"],
         args["prompt"],
         has_attachment=args["has_attachment"],
         ack_prefix=args.get("ack_prefix") or "",
+        session_id=args.get("session_id") or "",
     )
 
 

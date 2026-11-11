@@ -88,13 +88,14 @@ def login(body: LoginBody) -> dict[str, Any]:
         profile = dynamo.login(body.username)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    sess = vault.load_session(profile["username"])
-    return {**profile, "messages": sess.get("messages")}
+    return {**profile, "messages": []}
 
 
 @app.get("/api/session")
 def session(x_username: str | None = Header(default=None)) -> dict[str, Any]:
     user = _user(x_username)
+    # Page load reads this once. A refresh drops the chat, the rent roll, and deal facts.
+    vault.clear_visit(user)
     sess = vault.load_session(user)
     roll = vault.load_roll(user)
     return {
@@ -119,10 +120,15 @@ def traces(x_username: str | None = Header(default=None)) -> dict[str, Any]:
     return {"traces": list_traces(user)}
 
 
-def _decorate_outcomes(user: str, outcomes: list[dict[str, Any]]) -> dict[str, Any]:
+def _decorate_outcomes(
+    user: str,
+    outcomes: list[dict[str, Any]],
+    session_id: str = "",
+) -> dict[str, Any]:
+    from cre_rentroll.chat_memory import load as load_chat
+
     last = dict(outcomes[-1])
-    sess = vault.load_session(user)
-    last["history"] = sess.get("messages")
+    last["history"] = load_chat(session_id)
     last["all"] = list(outcomes)
     last["facts"] = retrieve_facts(user)
     roll = vault.load_roll(user)
@@ -145,9 +151,14 @@ def _run_chat_sync(
     attached: bool,
     filename: str | None,
     raw: bytes | None,
+    session_id: str = "",
 ) -> dict[str, Any]:
     outcomes: list[dict[str, Any]] = []
     ack = ""
+    turn_ctx_session = (session_id or "").strip()
+    from cre_rentroll import turn_ctx
+
+    turn_ctx.set_chat_session(turn_ctx_session)
     if filename and raw is not None:
         if len(raw) > 8_000_000:
             raise HTTPException(413, "file too large")
@@ -157,26 +168,30 @@ def _run_chat_sync(
         # shows one question and one answer.
         if text:
             ingest_outcome = harness.ingest_attachment(
-                user, filename, raw, persist=False
+                user, filename, raw, persist=False, session_id=turn_ctx_session
             )
             ack = (ingest_outcome.text or "").strip()
             outcomes.append(ingest_outcome.model_dump())
         else:
             with run_events.cloudwatch_only():
                 ingest_outcome = harness.ingest_attachment(
-                    user, filename, raw, persist=True
+                    user, filename, raw, persist=True, session_id=turn_ctx_session
                 )
                 outcomes.append(ingest_outcome.model_dump())
     if text:
         outcomes.append(
             # RUN Cycle Strands: STEP 2: Scope the question and start one agent run.
             harness.run_task(
-                user, text, has_attachment=attached, ack_prefix=ack
+                user,
+                text,
+                has_attachment=attached,
+                ack_prefix=ack,
+                session_id=turn_ctx_session,
             ).model_dump()
         )
     if not outcomes:
         raise HTTPException(400, "attach a rent roll or type a message")
-    return _decorate_outcomes(user, outcomes)
+    return _decorate_outcomes(user, outcomes, turn_ctx_session)
 
 
 def _sse_pack(event: str, data: dict[str, Any]) -> bytes:
@@ -187,6 +202,7 @@ def _sse_pack(event: str, data: dict[str, Any]) -> bytes:
 async def chat(
     request: Request,
     message: str = Form(default=""),
+    session_id: str = Form(default=""),
     file: UploadFile | None = File(default=None),
     x_username: str | None = Header(default=None),
 ):
@@ -212,7 +228,7 @@ async def chat(
     if not want_sse:
         token = run_events.bind(sink)
         try:
-            last = _run_chat_sync(user, text, attached, filename, raw)
+            last = _run_chat_sync(user, text, attached, filename, raw, session_id)
         finally:
             run_events.reset(token)
         last["logs"] = collected
@@ -226,7 +242,7 @@ async def chat(
         token = run_events.bind(sink)
         try:
             # RUN Cycle Strands: STEP 1: Run this chat message and return the answer payload.
-            last = _run_chat_sync(user, text, attached, filename, raw)
+            last = _run_chat_sync(user, text, attached, filename, raw, session_id)
             last["logs"] = collected
             q.put(("done", last))
         except HTTPException as exc:

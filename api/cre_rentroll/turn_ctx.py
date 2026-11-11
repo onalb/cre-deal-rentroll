@@ -20,6 +20,7 @@ _checklist: ContextVar[list[dict[str, str]]] = ContextVar("cre_checklist", defau
 _eval_scores: ContextVar[Any] = ContextVar("cre_eval_scores", default=None)
 _eval_query: ContextVar[str | None] = ContextVar("cre_eval_query", default=None)
 _ack_prefix: ContextVar[str | None] = ContextVar("cre_ack_prefix", default=None)
+_chat_session: ContextVar[str | None] = ContextVar("cre_chat_session", default=None)
 _react_turn: ContextVar[int] = ContextVar("cre_react_turn", default=0)
 
 # Strands agent() and the OpenAI fallback both stop after this many model turns.
@@ -265,6 +266,15 @@ def set_ack_prefix(value: str | None) -> None:
 
 def ack_prefix() -> str | None:
     return _ack_prefix.get()
+
+
+def set_chat_session(value: str | None) -> None:
+    """Page session that holds this visit's transcript. A refresh sends a new id."""
+    _chat_session.set(str(value).strip() if value else None)
+
+
+def chat_session() -> str:
+    return _chat_session.get() or ""
 
 
 def traces() -> list[dict[str, Any]]:

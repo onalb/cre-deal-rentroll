@@ -850,7 +850,7 @@ def test_ingest_only_chat_does_not_fill_sse_logs(monkeypatch):
 
     seen = []
 
-    def fake_ingest(user, filename, raw, persist=True):
+    def fake_ingest(user, filename, raw, persist=True, session_id=""):
         emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
         emit("agentcore_memory", "wrote conversational STM")
         return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
@@ -858,7 +858,7 @@ def test_ingest_only_chat_does_not_fill_sse_logs(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.ingest_attachment", fake_ingest)
     monkeypatch.setattr(
         "cre_rentroll.main._decorate_outcomes",
-        lambda user, outcomes: dict(outcomes[-1]),
+        lambda user, outcomes, session_id="": dict(outcomes[-1]),
     )
     token = bind(seen.append)
     try:
@@ -874,11 +874,11 @@ def test_question_submit_still_streams_ingest_then_react(monkeypatch):
 
     seen = []
 
-    def fake_ingest(user, filename, raw, persist=True):
+    def fake_ingest(user, filename, raw, persist=True, session_id=""):
         emit("ingest", "La Cordoba Rent Roll, 164 units, parser=realpage")
         return ChatOutcome(kind="ingest_ack", text="ok", stop_reason="ingest")
 
-    def fake_task(user, text, has_attachment=False, ack_prefix=""):
+    def fake_task(user, text, has_attachment=False, ack_prefix="", session_id=""):
         emit("inventory", "full tool menu (book)")
         emit("react", "ReAct turn 1")
         return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")
@@ -887,7 +887,7 @@ def test_question_submit_still_streams_ingest_then_react(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_task", fake_task)
     monkeypatch.setattr(
         "cre_rentroll.main._decorate_outcomes",
-        lambda user, outcomes: dict(outcomes[-1]),
+        lambda user, outcomes, session_id="": dict(outcomes[-1]),
     )
     token = bind(seen.append)
     try:
@@ -942,10 +942,14 @@ def test_file_plus_question_persists_one_exchange(monkeypatch):
         "What occupancy do you predict?",
         skip_scope=True,
         ack_prefix=ack,
+        session_id="file-q",
     )
 
     assert outcome.kind == "answer"
-    msgs = saved["messages"]
+    assert saved["messages"] == []
+    from cre_rentroll.chat_memory import load as load_chat
+
+    msgs = load_chat("file-q")
     assert [m["role"] for m in msgs] == ["user", "assistant"]
     assert msgs[0]["content"] == "What occupancy do you predict?"
     assert msgs[1]["content"].startswith(ack + "\n\n")

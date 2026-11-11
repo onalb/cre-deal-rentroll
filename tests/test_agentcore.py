@@ -88,9 +88,48 @@ def test_save_session_keeps_facts_and_traces(monkeypatch):
     loaded = vault.load_session("ada")
     assert loaded["messages"][0]["content"] == "occupancy"
     assert loaded["facts"]["unit_count"] == 4
+    vault.clear_messages("ada")
+    cleared = vault.load_session("ada")
+    assert cleared["messages"] == []
+    assert cleared["facts"]["unit_count"] == 4
     assert loaded["traces"][0]["run_id"] == "t1"
     assert "FACT#" not in table
     assert not any(sk.startswith("TRACE#") for _, sk in table)
+
+
+def test_vault_lives_on_the_page_session(monkeypatch):
+    puts: list[tuple] = []
+
+    monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *_a, **_k: None)
+    monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **_k: puts.append(a))
+    monkeypatch.setattr("cre_rentroll.dynamo.delete_item", lambda *_a, **_k: None)
+    from cre_rentroll import turn_ctx, vault
+    from cre_rentroll.main import session
+    from cre_rentroll.memory import generate_from_roll, retrieve_facts
+    from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
+
+    roll = CanonicalRentRoll(
+        layout="one_row",
+        property_name="Chambers",
+        units=[UnitRow(unit_id="1", in_place_rent=100, vacant=False)],
+    )
+    turn_ctx.set_chat_session("visit-a")
+    try:
+        vault.save_roll("ada", roll)
+        generate_from_roll("ada", roll)
+        loaded = vault.load_roll("ada")
+        assert loaded is not None and loaded.property_name == "Chambers"
+        assert retrieve_facts("ada")["property_name"] == "Chambers"
+        assert puts == []
+        turn_ctx.set_chat_session("visit-b")
+        assert vault.load_roll("ada") is None
+        assert retrieve_facts("ada") == {}
+    finally:
+        turn_ctx.set_chat_session(None)
+    body = session("ada")
+    assert body["vault"] is None
+    assert body["facts"] == {}
+    assert body["messages"] == []
 
 
 def test_write_trace_preview_optional(monkeypatch):
@@ -426,7 +465,7 @@ def test_invocations_sse_emits_log_before_outcome(monkeypatch):
     from cre_rentroll.run_events import emit
     from cre_rentroll.schemas import ChatOutcome
 
-    def fake_task(user, text, has_attachment=False, ack_prefix=""):
+    def fake_task(user, text, has_attachment=False, ack_prefix="", session_id=""):
         emit("inventory", "full tool menu (book)")
         emit("react", "ReAct turn 1")
         return ChatOutcome(kind="answer", text="164 units", stop_reason="eval_ok")

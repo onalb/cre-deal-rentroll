@@ -1204,12 +1204,20 @@ def test_run_task_passes_session_history_into_agent(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": history})
+    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
     monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
+    from cre_rentroll.chat_memory import save as save_chat
+
+    save_chat("hist-1", history)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
-    run_task("tester", "but this is the same as with 15 vacant", skip_scope=True)
+    run_task(
+        "tester",
+        "but this is the same as with 15 vacant",
+        skip_scope=True,
+        session_id="hist-1",
+    )
     assert len(prompts) == 1
     blob = prompts[0]
     assert "What is in-place monthly?" in blob

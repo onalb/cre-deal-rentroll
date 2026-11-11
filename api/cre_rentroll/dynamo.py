@@ -110,6 +110,10 @@ def put_item(username: str, sk: str, attrs: dict[str, Any]) -> None:
     table().put_item(Item=item)
 
 
+def delete_item(username: str, sk: str) -> None:
+    table().delete_item(Key={"pk": pk_user(username), "sk": sk})
+
+
 def query_prefix(username: str, sk_prefix: str) -> list[dict[str, Any]]:
     resp = table().query(
         KeyConditionExpression=Key("pk").eq(pk_user(username)) & Key("sk").begins_with(sk_prefix)

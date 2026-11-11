@@ -116,6 +116,12 @@ def stamp_arguments(
         clean["route"] = route
     if "username" in props and username:
         clean["username"] = username
+    if "roll" in props:
+        from cre_rentroll import vault
+
+        roll = vault.load_roll(username)
+        if roll is not None:
+            clean["roll"] = roll.model_dump(mode="json")
     if "as_of" in props and as_of and not clean.get("as_of"):
         clean["as_of"] = as_of
     if "question" in props and not str(clean.get("question") or "").strip():

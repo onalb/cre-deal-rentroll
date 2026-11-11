@@ -28,9 +28,10 @@ class MemoryStore:
         self.username = username
 
     def search(self, query: str = "") -> list[dict[str, Any]]:
-        from cre_rentroll import vault
+        from cre_rentroll import turn_ctx
+        from cre_rentroll.chat_memory import load_facts
 
-        facts = vault.load_session(self.username).get("facts") or {}
+        facts = load_facts(turn_ctx.chat_session())
         q = query.lower().strip()
         out = []
         for slot, value in facts.items():
@@ -39,18 +40,14 @@ class MemoryStore:
         return out
 
     def add(self, slot: str, value: Any, *, overwrite: bool = False) -> None:
-        from cre_rentroll import vault
+        from cre_rentroll import turn_ctx
+        from cre_rentroll.chat_memory import load_facts, save_facts
 
-        sess = vault.load_session(self.username)
-        facts = dict(sess.get("facts") or {})
+        facts = load_facts(turn_ctx.chat_session())
         if slot in facts and not overwrite:
             return
         facts[slot] = value
-        vault.save_session(
-            self.username,
-            list(sess.get("messages") or []),
-            facts=facts,
-        )
+        save_facts(turn_ctx.chat_session(), facts)
 
 
 def retrieve_facts(username: str) -> dict[str, Any]:
