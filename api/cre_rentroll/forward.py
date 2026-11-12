@@ -296,10 +296,11 @@ def deal_call(name: str, model_args: dict[str, Any], specs: list[dict[str, Any]]
         from urllib.parse import urlparse
 
         from cre_rentroll import vault
+        from cre_rentroll.agentcore_client import inside_runtime
         from cre_rentroll.mcp_gateway import _is_agentcore, mcp_url
         from cre_rentroll.run_events import emit
 
-        in_process = _is_agentcore()
+        in_process = inside_runtime() or _is_agentcore()
         host = urlparse(mcp_url() or "").netloc or "unset"
         roll = None
         try:

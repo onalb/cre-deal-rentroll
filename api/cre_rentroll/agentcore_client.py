@@ -33,9 +33,18 @@ def should_invoke_remote() -> bool:
 
 
 def session_id(username: str) -> str:
-    slug = re.sub(r"[^a-z0-9-]", "-", (username or "anon").strip().lower())[:24]
-    digest = hashlib.sha256(slug.encode()).hexdigest()
-    sid = f"cre-rr-{slug}-{digest}"
+    """One AgentCore microVM per user and app version.
+
+    A live session stays on the image that started it. Keeping the id stable
+    across deploys leaves the previous image answering, which is why a new
+    runtime still returned the old gateway error.
+    """
+    from cre_rentroll import __version__
+
+    slug = re.sub(r"[^a-z0-9-]", "-", (username or "anon").strip().lower())[:16]
+    ver = re.sub(r"[^a-z0-9]", "", __version__)[:8] or "0"
+    digest = hashlib.sha256(f"{slug}:{ver}".encode()).hexdigest()
+    sid = f"cre-rr-{ver}-{slug}-{digest}"
     return sid[:64] if len(sid) >= 33 else (sid + "0" * 33)[:33]
 
 

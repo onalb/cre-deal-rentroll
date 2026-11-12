@@ -428,8 +428,12 @@ def test_invoke_replays_sse_logs_before_outcome(monkeypatch):
     class FakeClient:
         def invoke_agent_runtime(self, **kwargs):
             assert kwargs["accept"] == "text/event-stream"
+            from cre_rentroll import __version__
+
+            ver = "".join(ch for ch in __version__ if ch.isalnum())
             assert kwargs["runtimeSessionId"] == session_id("burak")
             assert kwargs["runtimeSessionId"] != "page-visit"
+            assert ver in kwargs["runtimeSessionId"]
             return {
                 "contentType": "text/event-stream",
                 "statusCode": 200,
