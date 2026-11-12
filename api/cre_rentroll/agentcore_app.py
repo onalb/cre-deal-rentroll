@@ -32,6 +32,7 @@ class InvocationBody(BaseModel):
     session_id: str = ""
     roll: dict[str, Any] | None = None
     facts: dict[str, Any] | None = None
+    messages: list[dict[str, Any]] | None = None
     input: dict[str, Any] | None = None
 
 
@@ -52,6 +53,7 @@ def parse_payload(body: dict[str, Any] | InvocationBody) -> dict[str, Any]:
         "session_id": str(raw.get("session_id") or nested.get("session_id") or ""),
         "roll": raw.get("roll") if isinstance(raw.get("roll"), dict) else nested.get("roll"),
         "facts": raw.get("facts") if isinstance(raw.get("facts"), dict) else nested.get("facts"),
+        "messages": raw.get("messages") if isinstance(raw.get("messages"), list) else nested.get("messages"),
     }
 
 
@@ -62,6 +64,7 @@ def _sse_data(payload: dict[str, Any]) -> bytes:
 def _seed_visit(args: dict[str, Any]) -> None:
     """Copy the page-session vault into this process before the turn."""
     from cre_rentroll import turn_ctx
+    from cre_rentroll.chat_memory import save as save_chat
     from cre_rentroll.chat_memory import save_facts, save_roll
     from cre_rentroll.schemas import CanonicalRentRoll
 
@@ -73,6 +76,9 @@ def _seed_visit(args: dict[str, Any]) -> None:
     facts = args.get("facts")
     if isinstance(facts, dict) and facts:
         save_facts(sid, facts)
+    messages = args.get("messages")
+    if isinstance(messages, list):
+        save_chat(sid, [row for row in messages if isinstance(row, dict)])
 
 
 def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:

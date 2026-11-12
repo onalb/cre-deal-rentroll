@@ -244,13 +244,28 @@ def run_task(
 
     turn_ctx.set_chat_session(session_id)
     if should_invoke_remote() and not skip_scope:
-        return invoke_run_task(
+        # The agent runs in another process. The page reads this process's
+        # transcript, so the returned turn has to be saved here too.
+        turn_ctx.set_ack_prefix(ack_prefix)
+        outcome = invoke_run_task(
             username,
             message,
             has_attachment=has_attachment,
             ack_prefix=ack_prefix,
             session_id=turn_ctx.chat_session(),
         )
+        from cre_rentroll.chat_memory import load as load_chat
+
+        _persist(
+            username,
+            load_chat(turn_ctx.chat_session()),
+            persist_as or user_visible(message),
+            outcome,
+            "",
+            [],
+            record_trace=False,
+        )
+        return outcome
     _ = has_attachment
     run_id = str(uuid.uuid4())[:8]
     shown_user = persist_as or user_visible(message)
@@ -690,6 +705,7 @@ def _persist(
     traces: list[dict[str, Any]],
     *,
     agentcore_boxes: bool = True,
+    record_trace: bool = True,
 ) -> None:
     ack = (turn_ctx.ack_prefix() or "").strip()
     answer = (outcome.text or "").strip()
@@ -704,6 +720,8 @@ def _persist(
     from cre_rentroll.chat_memory import save as save_chat
 
     save_chat(turn_ctx.chat_session(), messages)
+    if not record_trace:
+        return
     # The transcript, rent roll, and deal facts stay on the page session.
     # This write keeps run traces and clears any leftover Dynamo transcript.
     vault.save_session(username, [], eval_retry_used=False)

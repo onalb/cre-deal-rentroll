@@ -496,3 +496,46 @@ def test_invocations_sse_emits_log_before_outcome(monkeypatch):
     assert body["host"] == "agentcore"
     assert body["outcome"]["kind"] == "answer"
     assert body["logs"][0]["step"] == "agentcore_runtime"
+
+
+def test_remote_turn_stays_on_the_caller_transcript(monkeypatch):
+    from cre_rentroll.chat_memory import load, save
+    from cre_rentroll.harness import run_task
+    from cre_rentroll.schemas import ChatOutcome
+
+    sid = "page-history-keep"
+    save(sid, [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "252 units"}])
+
+    def fake_invoke(username, message, **kwargs):
+        assert kwargs["session_id"] == sid
+        return ChatOutcome(kind="answer", text="still 252", stop_reason="eval_ok")
+
+    monkeypatch.setenv("AGENTCORE_RUNTIME_ARN", "arn:aws:bedrock-agentcore:us-east-1:1:runtime/x")
+    monkeypatch.delenv("AGENTCORE_INSIDE", raising=False)
+    monkeypatch.setattr("cre_rentroll.agentcore_client.invoke_run_task", fake_invoke)
+
+    outcome = run_task("ada", "and occupancy?", ack_prefix="Saved roll.", session_id=sid)
+    hist = load(sid)
+    assert outcome.text == "still 252"
+    assert [row["content"] for row in hist] == [
+        "earlier",
+        "252 units",
+        "and occupancy?",
+        "Saved roll.\n\nstill 252",
+    ]
+
+
+def test_runtime_seeds_the_page_transcript():
+    from cre_rentroll.agentcore_app import _seed_visit
+    from cre_rentroll.chat_memory import load
+
+    _seed_visit(
+        {
+            "session_id": "runtime-seed",
+            "messages": [
+                {"role": "user", "content": "unit count?"},
+                {"role": "assistant", "content": "3"},
+            ],
+        }
+    )
+    assert load("runtime-seed")[-1]["content"] == "3"

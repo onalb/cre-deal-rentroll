@@ -158,6 +158,7 @@ def invoke_run_task(
         config=Config(read_timeout=120, retries={"max_attempts": 3, "mode": "standard"}),
     )
     from cre_rentroll import vault
+    from cre_rentroll.chat_memory import load as load_chat
     from cre_rentroll.memory import retrieve_facts
 
     body: dict[str, Any] = {
@@ -166,6 +167,7 @@ def invoke_run_task(
         "has_attachment": has_attachment,
         "ack_prefix": ack_prefix,
         "session_id": session_id,
+        "messages": load_chat(session_id),
     }
     roll = vault.load_roll(username)
     if roll is not None:
