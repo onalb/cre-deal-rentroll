@@ -15,7 +15,10 @@
       "properties": {
         "username": { "type": "string" },
         "occupancy": { "type": "string" },
-        "vacant_only": { "type": "boolean" }
+        "vacant_only": { "type": "boolean" },
+        "as_of": { "type": "string" },
+        "route": { "type": "string" },
+        "roll": { "type": "object" }
       }
     }
   },
@@ -26,7 +29,10 @@
       "type": "object",
       "properties": {
         "username": { "type": "string" },
-        "vacant_fill_rent": { "type": "number" }
+        "vacant_fill_rent": { "type": "number" },
+        "as_of": { "type": "string" },
+        "route": { "type": "string" },
+        "roll": { "type": "object" }
       }
     }
   },
@@ -37,7 +43,10 @@
       "type": "object",
       "properties": {
         "username": { "type": "string" },
-        "operating_expenses": { "type": "number" }
+        "operating_expenses": { "type": "number" },
+        "as_of": { "type": "string" },
+        "route": { "type": "string" },
+        "roll": { "type": "object" }
       }
     }
   },
@@ -49,7 +58,10 @@
       "properties": {
         "username": { "type": "string" },
         "ask_price": { "type": "number" },
-        "noi": { "type": "number" }
+        "noi": { "type": "number" },
+        "as_of": { "type": "string" },
+        "route": { "type": "string" },
+        "roll": { "type": "object" }
       },
       "required": ["ask_price"]
     }

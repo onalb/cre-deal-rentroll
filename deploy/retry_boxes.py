@@ -71,7 +71,11 @@ def main() -> int:
             shutil.rmtree(lam_dir, ignore_errors=True)
         lam_dir.mkdir()
         shutil.copy(DEPLOY / "lambda_gateway" / "handler.py", lam_dir / "handler.py")
-        shutil.copytree(ROOT / "api" / "cre_rentroll", lam_dir / "cre_rentroll")
+        shutil.copytree(
+            ROOT.parent / "capabilities-gateway" / "capabilities_gateway",
+            lam_dir / "capabilities_gateway",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
         subprocess.run(
             [PY, "-m", "pip", "install", "-q", "pydantic", "httpx", "ddgs", "openpyxl", "python-dotenv", "boto3", "-t", str(lam_dir)],
             check=False,

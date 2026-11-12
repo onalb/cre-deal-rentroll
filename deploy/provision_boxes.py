@@ -168,7 +168,11 @@ def main() -> int:
     (lam_dir / "handler.py").write_bytes((DEPLOY / "lambda_gateway" / "handler.py").read_bytes())
     import shutil
 
-    shutil.copytree(ROOT / "api" / "cre_rentroll", lam_dir / "cre_rentroll")
+    shutil.copytree(
+        ROOT.parent / "capabilities-gateway" / "capabilities_gateway",
+        lam_dir / "capabilities_gateway",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
     subprocess.run(
         [
             PY,
