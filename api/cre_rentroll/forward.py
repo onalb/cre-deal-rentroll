@@ -249,8 +249,16 @@ def _model_text(body: Any) -> str:
     return json.dumps(body)
 
 
+_VAULT_MATH = frozenset({"query_units", "compute_income", "compute_noi", "compute_cap_rate"})
+
+
 def deal_call(name: str, model_args: dict[str, Any], specs: list[dict[str, Any]]) -> str:
-    """Post one deal tools/call. Local score_gcr never comes through here."""
+    """Post one deal tools/call. Local score_gcr never comes through here.
+
+    The model reaches vault tools through this function, not tools._capability.
+    On AgentCore those four are answered from the page-session roll. The live
+    gateway Lambda calls them back into itself and returns an internal error.
+    """
     from cre_rentroll import turn_ctx
     from cre_rentroll.capabilities_client import call_deal_tool
 
@@ -283,8 +291,36 @@ def deal_call(name: str, model_args: dict[str, Any], specs: list[dict[str, Any]]
         checklist=turn_ctx.checklist(),
         work=_work_state(specs, name),
     )
+    in_process = False
+    if name in _VAULT_MATH:
+        from urllib.parse import urlparse
+
+        from cre_rentroll import vault
+        from cre_rentroll.mcp_gateway import _is_agentcore, mcp_url
+        from cre_rentroll.run_events import emit
+
+        in_process = _is_agentcore()
+        host = urlparse(mcp_url() or "").netloc or "unset"
+        roll = None
+        try:
+            roll = vault.load_roll(turn_ctx.username() or "")
+        except Exception as exc:
+            emit("vault", f"{name} roll load failed: {type(exc).__name__}: {exc}")
+        units = getattr(roll, "unit_count", None)
+        emit(
+            "vault",
+            f"{name} {'in-process' if in_process else 'gateway'} host={host} "
+            f"session={turn_ctx.chat_session() or '-'} "
+            f"roll={'yes' if roll is not None else 'no'} "
+            f"units={units if units is not None else '-'}",
+        )
     try:
-        body = _parse_body(call_deal_tool(name, remote))
+        if in_process:
+            from cre_rentroll.vault_math import run_vault_tool
+
+            body = _parse_body(run_vault_tool(name, remote))
+        else:
+            body = _parse_body(call_deal_tool(name, remote))
     except Exception as exc:
         err = {"ok": False, "error": str(exc), "source": "capabilities-gateway"}
         turn_ctx.record(name, dict(model_args), err)

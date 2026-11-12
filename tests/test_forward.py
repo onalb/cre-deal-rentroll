@@ -122,3 +122,46 @@ def test_deal_call_stores_the_returned_checklist(monkeypatch):
     text = deal_call("create_plan", {"tasks": "1. query_units"}, [_plan()])
     assert text == "Plan stored."
     assert turn_ctx.checklist() == [{"text": "query_units", "status": "pending"}]
+
+
+def test_agentcore_deal_call_reads_the_page_roll(monkeypatch):
+    from cre_rentroll.run_events import bind, reset
+    from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
+    from cre_rentroll.vault import save_roll
+
+    url = "https://credealrentroll.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+    monkeypatch.setenv("MCP_URL", url)
+    monkeypatch.setenv("AGENTCORE_GATEWAY_URL", url)
+
+    def boom(*_a, **_k):
+        raise AssertionError("query_units must not call the AgentCore gateway")
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", boom)
+    turn_ctx.reset_turn("ada")
+    turn_ctx.set_chat_session("visit-bay")
+    save_roll(
+        "ada",
+        CanonicalRentRoll(
+            property_name="Bay View",
+            as_of="2021-09-30",
+            layout="one_row",
+            units=[
+                UnitRow(unit_id="1", occupancy="Occupied", in_place_rent=1000, sqft=400, mtm=True),
+                UnitRow(unit_id="2", occupancy="Occupied", in_place_rent=900, sqft=500),
+            ],
+        ),
+    )
+    seen: list[dict] = []
+    token = bind(seen.append)
+    try:
+        text = deal_call("query_units", {}, [_units()])
+    finally:
+        reset(token)
+    body = json.loads(text)
+    assert body["unit_count"] == 2
+    assert body["mtm_count"] == 1
+    vault_lines = [row["message"] for row in seen if row["step"] == "vault"]
+    assert vault_lines
+    assert "in-process" in vault_lines[0]
+    assert "roll=yes" in vault_lines[0]
+    assert "units=2" in vault_lines[0]
