@@ -428,6 +428,8 @@ def test_invoke_replays_sse_logs_before_outcome(monkeypatch):
     class FakeClient:
         def invoke_agent_runtime(self, **kwargs):
             assert kwargs["accept"] == "text/event-stream"
+            assert kwargs["runtimeSessionId"] == session_id("burak")
+            assert kwargs["runtimeSessionId"] != "page-visit"
             return {
                 "contentType": "text/event-stream",
                 "statusCode": 200,
@@ -450,7 +452,7 @@ def test_invoke_replays_sse_logs_before_outcome(monkeypatch):
 
     token = bind(capturing_sink)
     try:
-        outcome = invoke_run_task("burak", "occupancy?")
+        outcome = invoke_run_task("burak", "occupancy?", session_id="page-visit")
     finally:
         reset(token)
     assert outcome.kind == "answer"

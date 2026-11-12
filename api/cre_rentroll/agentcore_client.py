@@ -39,6 +39,11 @@ def session_id(username: str) -> str:
     return sid[:64] if len(sid) >= 33 else (sid + "0" * 33)[:33]
 
 
+# invoke_run_task takes a page-session argument also named session_id.
+# Call this alias so that argument does not hide the function.
+runtime_session_id = session_id
+
+
 def _parse_sse_block(block: str) -> dict[str, Any] | None:
     data_lines: list[str] = []
     for line in block.split("\n"):
@@ -172,7 +177,7 @@ def invoke_run_task(
     try:
         resp = client.invoke_agent_runtime(
             agentRuntimeArn=arn,
-            runtimeSessionId=session_id(username),
+            runtimeSessionId=runtime_session_id(username),
             runtimeUserId=(username or "anon")[:128],
             payload=payload,
             qualifier="DEFAULT",
