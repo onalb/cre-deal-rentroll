@@ -777,10 +777,18 @@ def ingest_noop_doc() -> str:
     return "ingest is executed by the API on attach, not as a model tool"
 
 
+_VAULT_MATH = frozenset({"query_units", "compute_income", "compute_noi", "compute_cap_rate"})
+
+
 def _capability(name: str, arguments: dict[str, Any]) -> str:
-    """POST this tool to the capabilities gateway. No local math."""
+    """POST this tool to the capabilities gateway.
+
+    On the AgentCore gateway the vault tools loop back into this process and
+    the gateway returns an internal error. Those four read the page-session
+    roll here instead. The local gateway still receives the call.
+    """
     from cre_rentroll.capabilities_client import GATEWAY_REQUIRED, call_deal_tool
-    from cre_rentroll.mcp_gateway import mcp_url
+    from cre_rentroll.mcp_gateway import _is_agentcore, mcp_url
 
     payload_args = {key: value for key, value in arguments.items() if value is not None}
     user = turn_ctx.username() or os.environ.get("CRE_RENTROLL_USER") or ""
@@ -819,7 +827,12 @@ def _capability(name: str, arguments: dict[str, Any]) -> str:
     if name == "ask_prediction_agent" and not str(remote_args.get("question") or "").strip():
         remote_args["question"] = (turn_ctx.eval_query() or "").strip()
     try:
-        text = call_deal_tool(name, remote_args)
+        if _is_agentcore() and name in _VAULT_MATH:
+            from cre_rentroll.vault_math import run_vault_tool
+
+            text = run_vault_tool(name, remote_args)
+        else:
+            text = call_deal_tool(name, remote_args)
     except Exception as exc:
         err = {"ok": False, "error": str(exc), "source": "capabilities-gateway"}
         turn_ctx.record(name, payload_args, err)
