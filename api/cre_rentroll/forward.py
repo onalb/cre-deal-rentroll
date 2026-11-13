@@ -10,7 +10,51 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from typing import Any, Callable
+
+# Rent-roll file stems often append an as-of stamp and a unit count.
+_FILE_STAMP = re.compile(r"-\d{8}-\d{6}(?:\s*-\s*\d+)?$")
+_FILE_COUNT = re.compile(r"\s+\(\s*\d+\s*units?\s*\)$", re.I)
+_FILE_TAIL_COUNT = re.compile(r"\s+-\s+\d+$")
+_PREDICT_ASK = re.compile(r"predict|forecast|expir|month-to-month|\bmtm\b|occupancy", re.I)
+
+
+def property_label(name: str) -> str:
+    """Building words from a file property name.
+
+    'Bay View Gardens Apartments-20210930-040414 - 250' is Bay View Gardens
+    Apartments. Extra dates and counts are not a different property.
+    """
+    text = (name or "").strip()
+    text = _FILE_STAMP.sub("", text).strip()
+    text = _FILE_COUNT.sub("", text).strip()
+    text = _FILE_TAIL_COUNT.sub("", text).strip()
+    return text or (name or "").strip()
+
+
+def with_session_building(question: str, property_name: str) -> str:
+    """Name the session building on a prediction ask that left it out.
+
+    A follow-up that is only a floor plan stays unchanged. A question that
+    already names some other building stays unchanged.
+    """
+    label = property_label(property_name)
+    asked = (question or "").strip()
+    raw = (property_name or "").strip()
+    if not label:
+        return asked
+    if raw and raw.lower() != label.lower() and raw.lower() in asked.lower():
+        return re.sub(re.escape(raw), label, asked, count=1, flags=re.I)
+    if label.lower() in asked.lower():
+        return asked
+    if not asked:
+        return f"What occupancy do you predict for {label}?"
+    if not _PREDICT_ASK.search(asked):
+        return asked
+    if re.search(r"\bfor\s+\S", asked, re.I):
+        return asked
+    return asked.rstrip(" ?") + f" for {label}?"
 
 # Fields the model must not set. The forwarder fills the ones it knows.
 HIDDEN = frozenset(
@@ -291,6 +335,17 @@ def deal_call(name: str, model_args: dict[str, Any], specs: list[dict[str, Any]]
         checklist=turn_ctx.checklist(),
         work=_work_state(specs, name),
     )
+    if name == "ask_prediction_agent":
+        from cre_rentroll import vault
+
+        roll = None
+        try:
+            roll = vault.load_roll(turn_ctx.username() or "")
+        except Exception:
+            roll = None
+        named = str(getattr(roll, "property_name", "") or "").strip()
+        if named and "question" in remote:
+            remote["question"] = with_session_building(str(remote.get("question") or ""), named)
     in_process = False
     if name in _VAULT_MATH:
         from urllib.parse import urlparse

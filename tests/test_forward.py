@@ -165,3 +165,53 @@ def test_agentcore_deal_call_reads_the_page_roll(monkeypatch):
     assert "in-process" in vault_lines[0]
     assert "roll=yes" in vault_lines[0]
     assert "units=2" in vault_lines[0]
+
+
+def test_prediction_question_uses_the_file_building_name(monkeypatch):
+    from cre_rentroll.forward import property_label, with_session_building
+    from cre_rentroll.schemas import CanonicalRentRoll, UnitRow
+    from cre_rentroll.vault import save_roll
+
+    stem = "Bay View Gardens Apartments-20210930-040414 - 250"
+    assert property_label(stem) == "Bay View Gardens Apartments"
+    assert (
+        with_session_building("What occupancy do you predict?", stem)
+        == "What occupancy do you predict for Bay View Gardens Apartments?"
+    )
+    assert with_session_building("1x1 B", stem) == "1x1 B"
+
+    monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
+    turn_ctx.reset_turn("ada")
+    turn_ctx.set_chat_session("visit-bay")
+    save_roll(
+        "ada",
+        CanonicalRentRoll(
+            property_name=stem,
+            as_of="2021-09-30",
+            layout="one_row",
+            units=[UnitRow(unit_id="1", occupancy="Occupied", in_place_rent=1000)],
+        ),
+    )
+    seen: dict = {}
+
+    def fake(name, arguments, timeout=180.0):
+        seen["question"] = arguments.get("question")
+        return json.dumps({"ok": True, "answer": "73%", "awaiting_followup": False})
+
+    monkeypatch.setattr("cre_rentroll.capabilities_client.call_deal_tool", fake)
+    spec = {
+        "name": "ask_prediction_agent",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "username": {"type": "string"},
+                "route": {"type": "string"},
+            },
+        },
+    }
+    try:
+        deal_call("ask_prediction_agent", {"question": "What occupancy do you predict?"}, [spec])
+        assert seen["question"] == "What occupancy do you predict for Bay View Gardens Apartments?"
+    finally:
+        turn_ctx.set_chat_session(None)

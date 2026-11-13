@@ -1,6 +1,6 @@
 [project]
 name = "cre-deal-rentroll"
-version = "0.1.7"
+version = "0.1.8"
 description = "CRE rent-roll ingest + agent harness with tools, MCP-style vault, and G/C/R eval"
 readme = "README.md"
 requires-python = ">=3.11"

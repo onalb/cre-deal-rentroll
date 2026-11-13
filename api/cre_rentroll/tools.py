@@ -826,6 +826,20 @@ def _capability(name: str, arguments: dict[str, Any]) -> str:
             remote_args["as_of"] = asked
     if name == "ask_prediction_agent" and not str(remote_args.get("question") or "").strip():
         remote_args["question"] = (turn_ctx.eval_query() or "").strip()
+    if name == "ask_prediction_agent":
+        from cre_rentroll.forward import with_session_building
+        from cre_rentroll.vault import load_roll
+
+        try:
+            named_roll = load_roll(user)
+        except Exception:
+            named_roll = None
+        named = str(getattr(named_roll, "property_name", "") or "").strip()
+        if named:
+            remote_args["question"] = with_session_building(
+                str(remote_args.get("question") or ""),
+                named,
+            )
     try:
         if _is_agentcore() and name in _VAULT_MATH:
             from cre_rentroll.vault_math import run_vault_tool
