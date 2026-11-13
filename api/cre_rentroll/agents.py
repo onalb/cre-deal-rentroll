@@ -520,7 +520,7 @@ def _setup_tools_strands(
     for name in names:
         spec = by_name.get(name)
         if spec is not None:
-            # TOOL CALL: Start
+            # TOOL CALL SETUP: Start - build one gateway tool
             raw = tool_function(spec, lambda tool_name, args, _specs=spec_list: deal_call(tool_name, args, _specs))
             fn = _context_bound(raw, name)
             description = str(spec.get("description") or name)
