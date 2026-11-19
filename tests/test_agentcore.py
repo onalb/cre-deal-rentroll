@@ -132,6 +132,17 @@ def test_vault_lives_on_the_page_session(monkeypatch):
     assert body["messages"] == []
 
 
+def test_page_transcript_does_not_cross_users():
+    from cre_rentroll.chat_memory import load, save
+
+    sid = "same-browser-tab"
+    save(sid, [{"role": "user", "content": "ada's question"}], username="ada")
+    save(sid, [{"role": "assistant", "content": "beau's answer"}], username="beau")
+    assert load(sid, username="ada")[0]["content"] == "ada's question"
+    assert load(sid, username="beau")[0]["content"] == "beau's answer"
+    assert load(sid, username="cy") == []
+
+
 def test_write_trace_preview_optional(monkeypatch):
     session = {"messages": [{"role": "user", "content": "q"}], "facts": {"unit_count": 3}, "traces": []}
 
@@ -508,7 +519,11 @@ def test_remote_turn_stays_on_the_caller_transcript(monkeypatch):
     from cre_rentroll.schemas import ChatOutcome
 
     sid = "page-history-keep"
-    save(sid, [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "252 units"}])
+    save(
+        sid,
+        [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "252 units"}],
+        username="ada",
+    )
 
     def fake_invoke(username, message, **kwargs):
         assert kwargs["session_id"] == sid
@@ -519,7 +534,7 @@ def test_remote_turn_stays_on_the_caller_transcript(monkeypatch):
     monkeypatch.setattr("cre_rentroll.agentcore_client.invoke_run_task", fake_invoke)
 
     outcome = run_task("ada", "and occupancy?", ack_prefix="Saved roll.", session_id=sid)
-    hist = load(sid)
+    hist = load(sid, username="ada")
     assert outcome.text == "still 252"
     assert [row["content"] for row in hist] == [
         "earlier",

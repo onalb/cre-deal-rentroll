@@ -31,7 +31,7 @@ class MemoryStore:
         from cre_rentroll import turn_ctx
         from cre_rentroll.chat_memory import load_facts
 
-        facts = load_facts(turn_ctx.chat_session())
+        facts = load_facts(turn_ctx.chat_session(), username=self.username)
         q = query.lower().strip()
         out = []
         for slot, value in facts.items():
@@ -43,11 +43,11 @@ class MemoryStore:
         from cre_rentroll import turn_ctx
         from cre_rentroll.chat_memory import load_facts, save_facts
 
-        facts = load_facts(turn_ctx.chat_session())
+        facts = load_facts(turn_ctx.chat_session(), username=self.username)
         if slot in facts and not overwrite:
             return
         facts[slot] = value
-        save_facts(turn_ctx.chat_session(), facts)
+        save_facts(turn_ctx.chat_session(), facts, username=self.username)
 
 
 def retrieve_facts(username: str) -> dict[str, Any]:

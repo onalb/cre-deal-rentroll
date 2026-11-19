@@ -176,7 +176,7 @@ def invoke_run_task(
         "has_attachment": has_attachment,
         "ack_prefix": ack_prefix,
         "session_id": session_id,
-        "messages": load_chat(session_id),
+        "messages": load_chat(session_id, username=username),
     }
     roll = vault.load_roll(username)
     if roll is not None:

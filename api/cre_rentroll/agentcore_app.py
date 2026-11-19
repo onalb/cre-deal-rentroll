@@ -69,16 +69,17 @@ def _seed_visit(args: dict[str, Any]) -> None:
     from cre_rentroll.schemas import CanonicalRentRoll
 
     sid = str(args.get("session_id") or "")
+    user = str(args.get("username") or "")
     turn_ctx.set_chat_session(sid)
     raw = args.get("roll")
     if isinstance(raw, dict):
-        save_roll(sid, CanonicalRentRoll.model_validate(raw))
+        save_roll(sid, CanonicalRentRoll.model_validate(raw), username=user)
     facts = args.get("facts")
     if isinstance(facts, dict) and facts:
-        save_facts(sid, facts)
+        save_facts(sid, facts, username=user)
     messages = args.get("messages")
     if isinstance(messages, list):
-        save_chat(sid, [row for row in messages if isinstance(row, dict)])
+        save_chat(sid, [row for row in messages if isinstance(row, dict)], username=user)
 
 
 def _run_task(args: dict[str, Any], headers: Any) -> ChatOutcome:

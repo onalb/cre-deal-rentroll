@@ -189,12 +189,12 @@ def iter_gold(username: str, runs: int) -> Iterator[dict[str, Any]]:
     from cre_rentroll.chat_memory import load as load_chat
     from cre_rentroll.chat_memory import save as save_chat
 
-    vault.save_session(user, [], eval_retry_used=False)
+    vault.save_session(user, [])
     chat_id = f"gold-{user}"
-    save_chat(chat_id, [])
+    save_chat(chat_id, [], username=user)
     ingested = harness.ingest_attachment(user, DISPLAY_NAME, raw, session_id=chat_id)
     roll = vault.load_roll(user)
-    base = load_chat(chat_id)
+    base = load_chat(chat_id, username=user)
     info = ingested.ingest or {}
     yield {
         "event": "status",
@@ -219,8 +219,8 @@ def iter_gold(username: str, runs: int) -> Iterator[dict[str, Any]]:
                 "runs": runs,
                 "message": f"{case_id} · run {run} of {runs}",
             }
-            vault.save_session(user, [], eval_retry_used=False)
-            save_chat(chat_id, base)
+            vault.save_session(user, [])
+            save_chat(chat_id, base, username=user)
             started = time.perf_counter()
             try:
                 outcome = harness.run_task(user, query, session_id=chat_id)

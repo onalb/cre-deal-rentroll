@@ -202,12 +202,12 @@ def ingest_attachment(
         from cre_rentroll.chat_memory import load as load_chat
         from cre_rentroll.chat_memory import save as save_chat
 
-        messages = load_chat(sid)
+        messages = load_chat(sid, username=username)
         messages += [
             {"role": "user", "content": f"[attached {filename}]"},
             {"role": "assistant", "content": text, "kind": "ingest_ack"},
         ]
-        save_chat(sid, messages)
+        save_chat(sid, messages, username=username)
     emit(
         "ingest",
         f"{roll.property_name or filename}, {roll.unit_count} units, parser={roll.layout}",
@@ -258,7 +258,7 @@ def run_task(
 
         _persist(
             username,
-            load_chat(turn_ctx.chat_session()),
+            load_chat(turn_ctx.chat_session(), username=username),
             persist_as or user_visible(message),
             outcome,
             "",
@@ -280,9 +280,7 @@ def run_task(
     turn_ctx.set_eval_query(shown_user)
     from cre_rentroll.chat_memory import load as load_chat
 
-    sess = vault.load_session(username)
-    messages = load_chat(turn_ctx.chat_session())
-    retry_used = bool(sess.get("eval_retry_used"))
+    messages = load_chat(turn_ctx.chat_session(), username=username)
     roll = vault.load_roll(username)
     has_vault = roll is not None
     from cre_rentroll.predict_followup import (
@@ -503,7 +501,7 @@ def run_task(
     tools_called.extend(t["name"] for t in traces)
 
     return _eval_and_stop(
-        username, message, draft_text, roll, traces, tools_called, run_id, messages, retry_used,
+        username, message, draft_text, roll, traces, tools_called, run_id, messages,
         persist_as=shown_user,
     )
 
@@ -611,7 +609,6 @@ def _eval_and_stop(
     tools_called: list[str],
     run_id: str,
     messages: list[dict[str, Any]],
-    retry_used: bool,
     *,
     persist_as: str | None = None,
 ) -> ChatOutcome:
@@ -620,13 +617,10 @@ def _eval_and_stop(
     stored = turn_ctx.eval_scores()
     if stored is not None:
         scores = stored
-        decision = gate(scores, retry_used)
-        if decision == "retry":
-            decision = "error"
+        decision = gate(scores)
     else:
         scores = EvalScores(judge="not_run")
         decision = "error"
-    scores.retry = retry_used
     uniq = list(dict.fromkeys(tools_called))
     judge = scores.judge or "not_run"
     eval_msg = format_eval_log(scores, decision)
@@ -719,12 +713,12 @@ def _persist(
     ]
     from cre_rentroll.chat_memory import save as save_chat
 
-    save_chat(turn_ctx.chat_session(), messages)
+    save_chat(turn_ctx.chat_session(), messages, username=username)
     if not record_trace:
         return
     # The transcript, rent roll, and deal facts stay on the page session.
     # This write keeps run traces and clears any leftover Dynamo transcript.
-    vault.save_session(username, [], eval_retry_used=False)
+    vault.save_session(username, [])
     try:
         write_trace(
             username,

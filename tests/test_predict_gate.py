@@ -43,6 +43,25 @@ def test_predict_skill_does_not_name_chips():
     assert "92.07" not in cite
 
 
+def test_current_book_does_not_keep_predict_tool(monkeypatch):
+    from cre_rentroll.predict_followup import is_followup_reply, note_awaiting_followup
+
+    reset_predict_state()
+    note_awaiting_followup("tester", True)
+    book = (
+        "What's the unit count, occupancy, in-place monthly income, vacant count, "
+        "average unit sqft, and any month-to-month on this rent roll?"
+    )
+    assert is_followup_reply(book) is False
+    assert is_followup_reply("how many units are vacant") is False
+    assert is_followup_reply("0") is True
+    assert allow_predict(book, username="tester") is False
+    names = filter_book_tools(_NAMES, book, username="tester")
+    assert "ask_prediction_agent" not in names
+    assert allow_predict("What occupancy do you predict?", username="tester") is True
+    reset_predict_state()
+
+
 def test_followup_keeps_predict_tool(monkeypatch):
     reset_predict_state()
     assert allow_predict("Plan A", username="tester") is False

@@ -9,6 +9,7 @@ present, not because the ask lists several this-roll figures with "and":
 - map + occupancy / cap + NOI / locate corrections → plan
 - forecast / predicted occupancy or vacancy → ask_prediction_agent
 - plan/variant reply after the predictor asked which group → ask_prediction_agent
+- current rent-roll vacancy, occupancy, or income stays query_units even if that reply is still pending
 - vault-empty this-roll occupancy/income asks → need-file (no tools, no plan)
 """
 
@@ -59,6 +60,17 @@ _MUST_PLAN_RE = re.compile(
 )
 
 
+def is_current_book(message: str) -> bool:
+    """Current rent-roll figures: occupancy, vacant count, units, income, sqft, MTM.
+
+    A forecast that also says occupancy or vacancy is not current book.
+    """
+    text = (message or "").strip()
+    if not text or _FORWARD_RE.search(text):
+        return False
+    return bool(_OCCUPANCY_RE.search(text) or _THIS_ROLL_INCOME_RE.search(text))
+
+
 def single_tool_intent(
     message: str,
     *,
@@ -72,13 +84,15 @@ def single_tool_intent(
     joined by "and" are still one tool. A prediction is one tool
     (ask_prediction_agent) even when it also says occupancy or vacancy.
     A short plan-name reply after the predictor asked which group is the
-    same tool. Map + occupancy or income + NOI stay planned. Occupancy with
+    same tool. A current-book ask (vacant count, occupancy, in-place income)
+    stays query_units or compute_income even when that reply is still pending.
+    Map + occupancy or income + NOI stay planned. Occupancy with
     no vault returns None so it lands on the need-file path, never web_search.
     """
     text = (message or "").strip()
     must_plan = bool(_MUST_PLAN_RE.search(text)) if text else False
     forward = bool(_FORWARD_RE.search(text)) if text else False
-    if predict_followup:
+    if predict_followup and not is_current_book(text):
         forward = True
     occ = bool(_OCCUPANCY_RE.search(text)) if text else False
     income = bool(_THIS_ROLL_INCOME_RE.search(text)) if text else False

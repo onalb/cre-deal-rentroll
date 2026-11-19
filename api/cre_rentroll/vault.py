@@ -11,19 +11,17 @@ SESSION_SK = "SESSION#default"
 
 def save_roll(username: str, roll: CanonicalRentRoll) -> None:
     """Keep the parsed rent roll on this page visit. Dynamo is not the vault."""
-    del username
     from cre_rentroll import turn_ctx
     from cre_rentroll.chat_memory import save_roll as save_mem
 
-    save_mem(turn_ctx.chat_session(), roll)
+    save_mem(turn_ctx.chat_session(), roll, username=username)
 
 
 def load_roll(username: str) -> CanonicalRentRoll | None:
-    del username
     from cre_rentroll import turn_ctx
     from cre_rentroll.chat_memory import load_roll as load_mem
 
-    return load_mem(turn_ctx.chat_session())
+    return load_mem(turn_ctx.chat_session(), username=username)
 
 
 def load_session(username: str) -> dict[str, Any]:
@@ -32,7 +30,6 @@ def load_session(username: str) -> dict[str, Any]:
     traces = item.get("traces") if isinstance(item.get("traces"), list) else []
     return {
         "messages": item.get("messages") or [],
-        "eval_retry_used": bool(item.get("eval_retry_used", False)),
         "facts": facts,
         "traces": traces,
     }
@@ -58,7 +55,6 @@ def save_session(username: str, messages: list[dict[str, Any]], **extra: Any) ->
         "messages": messages[-80:],
         "facts": facts,
         "traces": traces,
-        "eval_retry_used": bool(current.get("eval_retry_used", False)),
     }
     payload.update(extra)
     dynamo.put_item(username, SESSION_SK, payload)

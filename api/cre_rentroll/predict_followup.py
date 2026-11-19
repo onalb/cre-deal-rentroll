@@ -42,13 +42,21 @@ def session_awaiting_followup(username: str) -> bool:
 
 
 def is_followup_reply(message: str) -> bool:
-    """True for a short plan/variant reply, not a new occupancy/forecast ask."""
+    """True for a short plan/variant reply, not a forecast or a current-roll ask.
+
+    Current vacancy, occupancy, unit count, and in-place income on the rent
+    roll are book figures. They are not the answer to "which floor plan."
+    """
     asked = (message or "").strip()
     if not asked:
         return False
     if _OCCUPANCY_ONLY_RE.match(asked):
         return False
     if _NEW_PREDICT_RE.search(asked):
+        return False
+    from cre_rentroll.planless import is_current_book
+
+    if is_current_book(asked):
         return False
     return True
 

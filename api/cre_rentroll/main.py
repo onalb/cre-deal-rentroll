@@ -34,6 +34,22 @@ def _cors_origins() -> list[str]:
 
 app = FastAPI(title="CRE Deal Rentroll", version=__version__, lifespan=lifespan)
 app.include_router(gold_eval_router)
+
+
+@app.middleware("http")
+async def private_user_reads(request: Request, call_next):
+    """Session and traces are keyed only by X-Username. The URL does not change.
+
+    A shared GET URL is cacheable. Without no-store, Switch user replays the
+    previous user's JSON.
+    """
+    response = await call_next(request)
+    if request.method == "GET" and request.url.path in {"/api/session", "/api/traces"}:
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Vary"] = "X-Username"
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -128,7 +144,7 @@ def _decorate_outcomes(
     from cre_rentroll.chat_memory import load as load_chat
 
     last = dict(outcomes[-1])
-    last["history"] = load_chat(session_id)
+    last["history"] = load_chat(session_id, username=user)
     last["all"] = list(outcomes)
     last["facts"] = retrieve_facts(user)
     roll = vault.load_roll(user)

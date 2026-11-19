@@ -1208,7 +1208,7 @@ def test_run_task_passes_session_history_into_agent(monkeypatch):
     monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     from cre_rentroll.chat_memory import save as save_chat
 
-    save_chat("hist-1", history)
+    save_chat("hist-1", history, username="tester")
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)

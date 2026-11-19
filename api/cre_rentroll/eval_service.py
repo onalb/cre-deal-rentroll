@@ -862,21 +862,21 @@ def _llm_scores(
     )
 
 
-def gate(scores: EvalScores, retry_used: bool) -> str:
-    """Return next: retry | error | warn | show."""
+def gate(scores: EvalScores) -> str:
+    """Return next: error | warn | show."""
     if scores.judge in {"error", "empty", "not_run"}:
         return "error"
     if scores.G is None and scores.request_C is None:
         return "error"
-    # False only: genuine contradiction if a caller sets it. None (N/A / not in
-    # allowlist) must not retry or error — G/C/R still apply.
+    # False only: a genuine contradiction. None (N/A / not in the allowlist)
+    # leaves G/C/R to decide.
     if scores.vault_calc_ok is False:
-        return "error" if retry_used else "retry"
+        return "error"
     g = scores.G or 0
     c = scores.request_C or 0
     low = min(g, c)
     if low <= 2:
-        return "retry" if not retry_used else "error"
+        return "error"
     if low == 3 or g == 3 or c == 3:
         return "warn"
     return "show"

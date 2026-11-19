@@ -949,7 +949,7 @@ def test_file_plus_question_persists_one_exchange(monkeypatch):
     assert saved["messages"] == []
     from cre_rentroll.chat_memory import load as load_chat
 
-    msgs = load_chat("file-q")
+    msgs = load_chat("file-q", username="tester")
     assert [m["role"] for m in msgs] == ["user", "assistant"]
     assert msgs[0]["content"] == "What occupancy do you predict?"
     assert msgs[1]["content"].startswith(ack + "\n\n")

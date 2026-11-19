@@ -105,7 +105,7 @@ def test_definition_draft_with_citations_is_not_missing_cre_payload(monkeypatch)
     assert scores.reason != "draft missing CRE payload"
     assert scores.G == 5 and scores.request_C == 5
     assert scores.vault_calc_ok is True
-    assert gate(scores, retry_used=False) == "show"
+    assert gate(scores) == "show"
     assert "draft missing CRE payload" not in format_eval_log(scores, "show")
 
 
@@ -130,7 +130,7 @@ def test_occupancy_number_ask_requires_vault_payload(monkeypatch):
     assert scores.judge == "empty"
     assert scores.reason == "draft missing CRE payload"
     assert scores.G is None and scores.vault_calc_ok is None
-    assert gate(scores, retry_used=False) == "error"
+    assert gate(scores) == "error"
     assert has_cre_payload("Occupancy is 92.07%.", q)
 
 
@@ -169,7 +169,7 @@ def test_comps_listing_draft_is_on_topic_not_missing_payload(monkeypatch):
     assert scores.judge == "llm"
     assert scores.reason != "draft missing CRE payload"
     assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
-    assert gate(scores, retry_used=False) == "show"
+    assert gate(scores) == "show"
     assert "off-topic" not in (scores.reason or "").lower()
     assert "draft missing CRE payload" not in format_eval_log(scores, "show")
 
@@ -218,7 +218,7 @@ def test_area_demographics_draft_is_on_topic_not_missing_payload(monkeypatch):
     assert scores.judge == "llm"
     assert scores.reason != "draft missing CRE payload"
     assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
-    assert gate(scores, retry_used=False) == "show"
+    assert gate(scores) == "show"
     assert "off-topic" not in (scores.reason or "").lower()
     assert "not a rent-roll question" not in (scores.reason or "").lower()
     assert "draft missing CRE payload" not in format_eval_log(scores, "show")
@@ -379,10 +379,9 @@ def test_gate_empty_draft_is_error_no_retry():
     empty = EvalScores(judge="empty")
     assert empty.G is None and empty.R is None and empty.request_C is None
     assert empty.vault_calc_ok is None
-    assert gate(empty, retry_used=False) == "error"
-    assert gate(empty, retry_used=True) == "error"
+    assert gate(empty) == "error"
     skipped = EvalScores(judge="not_run")
-    assert gate(skipped, retry_used=False) == "error"
+    assert gate(skipped) == "error"
     assert vault_calc_log_label(None) == "N/A"
     assert format_eval_log(skipped, "error") == (
         "G=N/A C=N/A R=N/A vault_calc=N/A judge=not_run → error"
@@ -406,7 +405,7 @@ def test_live_judge_empty_skips_openai(monkeypatch):
     assert scores.judge == "empty"
     assert scores.G is None and scores.R is None and scores.request_C is None
     assert scores.vault_calc_ok is None
-    assert gate(scores, retry_used=False) == "error"
+    assert gate(scores) == "error"
 
 
 def test_vault_calc_flags_invented_number():
@@ -483,8 +482,7 @@ def test_vault_calc_derived_not_in_allowlist_is_na_not_ok():
     assert vault_calc_log_label(None) == "N/A"
     assert vault_calc_log_label(True) == "ok"
     scores = EvalScores(R=5, G=5, request_C=5, vault_calc_ok=None, judge="llm")
-    assert gate(scores, retry_used=False) == "show"
-    assert gate(scores, retry_used=True) == "show"
+    assert gate(scores) == "show"
     line = format_eval_log(scores, "show")
     assert "vault_calc=N/A" in line
     assert "mismatch" not in line
@@ -769,18 +767,15 @@ def test_score_gcr_logs_invented_draft_numbers(monkeypatch):
     assert not any("mismatch" in m for m in msgs)
 
 
-def test_gate_shared_retry():
+def test_gate_low_scores_and_vault_mismatch_stop():
     bad = EvalScores(R=5, G=1, request_C=1, vault_calc_ok=True)
-    assert gate(bad, retry_used=False) == "retry"
-    assert gate(bad, retry_used=True) == "error"
+    assert gate(bad) == "error"
     mismatch = EvalScores(R=5, G=5, request_C=5, vault_calc_ok=False)
-    assert gate(mismatch, retry_used=False) == "retry"
+    assert gate(mismatch) == "error"
     na = EvalScores(R=5, G=5, request_C=5, vault_calc_ok=None, judge="llm")
-    assert gate(na, retry_used=False) == "show"
-    assert gate(na, retry_used=True) == "show"
+    assert gate(na) == "show"
     failed = EvalScores(vault_calc_ok=True, judge="error")
-    assert gate(failed, retry_used=False) == "error"
-    assert gate(failed, retry_used=True) == "error"
+    assert gate(failed) == "error"
 
 
 def test_ci_aggregate_mean_stdev():
@@ -925,7 +920,7 @@ def test_predictor_clarify_draft_is_complete_not_missing_occupancy(monkeypatch):
     assert scores.G == 5 and scores.request_C == 5 and scores.R == 5
     assert scores.instructional is True
     assert scores.vault_calc_ok is True
-    assert gate(scores, retry_used=False) == "show"
+    assert gate(scores) == "show"
     user = captured["kwargs"]["messages"][1]["content"]
     assert "clarifying question" in user.lower()
     assert "query_units occupancy" in user.lower()
@@ -1256,7 +1251,7 @@ def test_live_judge_uses_mocked_llm(monkeypatch):
     assert scores.judge == "llm"
     assert scores.R == 5 and scores.G == 5 and scores.request_C == 4
     assert scores.vault_calc_ok is None
-    assert gate(scores, retry_used=True) == "show"
+    assert gate(scores) == "show"
     kw = captured["kwargs"]
     assert kw["response_format"] == {"type": "json_object"}
     assert "tools" not in kw
@@ -1278,7 +1273,7 @@ def test_live_judge_error_on_timeout(monkeypatch):
     assert scores.R is None and scores.G is None and scores.request_C is None
     assert "TimeoutError" in (scores.reason or "")
     assert "judge timeout" in (scores.reason or "")
-    assert gate(scores, retry_used=False) == "error"
+    assert gate(scores) == "error"
     err_line = format_eval_log(scores, "error")
     assert "judge=error" in err_line
     assert "judge timeout" in err_line
@@ -1314,4 +1309,4 @@ def test_live_judge_error_without_api_key(monkeypatch):
     assert called["n"] == 0
     assert scores.judge == "error"
     assert scores.G is None
-    assert gate(scores, retry_used=False) == "error"
+    assert gate(scores) == "error"

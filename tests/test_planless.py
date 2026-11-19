@@ -49,6 +49,23 @@ def test_single_tool_routing_table():
         == "ask_prediction_agent"
     )
     assert single_tool_intent("1x1 (renovated)", has_vault=True) is None
+    book = (
+        "What's the unit count, occupancy, in-place monthly income, vacant count, "
+        "average unit sqft, and any month-to-month on this rent roll?"
+    )
+    assert single_tool_intent(book, has_vault=True, predict_followup=True) == "query_units"
+    assert (
+        single_tool_intent("how many units are vacant", has_vault=True, predict_followup=True)
+        == "query_units"
+    )
+    assert (
+        single_tool_intent(
+            "What occupancy do you predict for Bay View Gardens Apartments?",
+            has_vault=True,
+            predict_followup=True,
+        )
+        == "ask_prediction_agent"
+    )
 
 
 def test_empty_vault_this_roll_needs_file():

@@ -42,13 +42,16 @@ function displayContent(m) {
   return c.replace(/\n*—\s*Warning:\s*live eval[\s\S]*$/i, "").trim();
 }
 
-async function api(path, { method = "GET", username, body, headers, timeoutMs = FETCH_MS } = {}) {
+async function api(path, { method = "GET", username, body, headers, timeoutMs = FETCH_MS, signal } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onAbort = () => ctrl.abort();
+  signal?.addEventListener("abort", onAbort);
   let res;
   try {
     res = await fetch(path, {
       method,
+      cache: "no-store",
       headers: {
         ...(username ? { "X-Username": username } : {}),
         ...headers,
@@ -58,9 +61,12 @@ async function api(path, { method = "GET", username, body, headers, timeoutMs = 
     });
   } catch (err) {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+    if (signal?.aborted) throw err;
     throw new Error(errorMessage(err, {}, 0));
   }
   clearTimeout(timer);
+  signal?.removeEventListener("abort", onAbort);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(errorMessage(null, data, res.status));
@@ -82,6 +88,7 @@ async function streamChat({ username, body, onLog, timeoutMs = CHAT_MS }) {
         "X-Username": username,
         Accept: "text/event-stream",
       },
+      cache: "no-store",
       body,
       signal: ctrl.signal,
     });
@@ -222,6 +229,9 @@ export default function App() {
   const logEnd = useRef(null);
   const fileInput = useRef(null);
   const chatSession = useRef(crypto.randomUUID());
+  const usernameRef = useRef(username);
+  const prevUser = useRef(username);
+  usernameRef.current = username;
   const visibleRunLog = compactArmed ? (logCompact ? compactRunLog(runLog) : runLog) : [];
 
   useEffect(() => {
@@ -229,12 +239,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const switched = prevUser.current !== username;
+    prevUser.current = username;
+    if (switched) {
+      chatSession.current = crypto.randomUUID();
+      setSession(null);
+      setText("");
+      setFile(null);
+      setChipId("");
+      setError("");
+      setBusy(false);
+      setRunLog([]);
+      setCompactArmed(false);
+      setVaultOpen(false);
+      setLogOpen(false);
+      setLogExpanded(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
     if (!username) return;
-    setRunLog([]);
-    setCompactArmed(false);
-    api("/api/session", { username, timeoutMs: 8_000 })
-      .then(setSession)
-      .catch((e) => setError(e.message));
+    const ac = new AbortController();
+    api("/api/session", { username, timeoutMs: 8_000, signal: ac.signal })
+      .then((data) => {
+        if (!ac.signal.aborted) setSession(data);
+      })
+      .catch((e) => {
+        if (ac.signal.aborted) return;
+        setError(e.message);
+      });
+    return () => ac.abort();
   }, [username]);
 
   useEffect(() => {
@@ -332,6 +364,9 @@ export default function App() {
     if (!text.trim() && !file) return;
     const outgoing = text;
     const outgoingFile = file;
+    const sentAs = username;
+    const sentSession = chatSession.current;
+    const stillHere = () => usernameRef.current === sentAs && chatSession.current === sentSession;
     const hasQuestion = Boolean(outgoing.trim());
     const rawUser = outgoing.trim() || (outgoingFile ? `[attached ${outgoingFile.name}]` : "");
     const userContent = displayContent({ role: "user", content: rawUser });
@@ -356,15 +391,17 @@ export default function App() {
         username,
         body: fd,
         onLog: (ev) => {
-          if (!hasQuestion) return;
+          if (!hasQuestion || !stillHere()) return;
           setRunLog((rows) => [...rows, ev]);
         },
       });
+      if (!stillHere()) return;
       if (hasQuestion && Array.isArray(data.logs) && data.logs.length) setRunLog(data.logs);
       applySession(setSession, data);
       if (fileInput.current) fileInput.current.value = "";
       setFile(null);
     } catch (err) {
+      if (!stillHere()) return;
       if (hasQuestion && Array.isArray(err.data?.logs) && err.data.logs.length) setRunLog(err.data.logs);
       applySession(setSession, err.data);
       if (!err.data?.history) {
@@ -377,7 +414,7 @@ export default function App() {
       setFile((current) => current || outgoingFile);
       setError(err.message);
     } finally {
-      setBusy(false);
+      if (stillHere()) setBusy(false);
     }
   }
 
