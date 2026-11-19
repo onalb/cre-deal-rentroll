@@ -93,10 +93,7 @@ def test_map_mtm_cap_multipart_ask_is_in_scope(monkeypatch):
 def _stub_vault(monkeypatch):
     from cre_rentroll.schemas import EvalScores
 
-    monkeypatch.setattr("cre_rentroll.harness.vault.load_session", lambda u: {"messages": []})
     monkeypatch.setattr("cre_rentroll.harness.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.harness.vault.save_session", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
@@ -389,10 +386,7 @@ def test_run_task_in_scope_does_not_emit_scope(monkeypatch):
         property_name="Hill",
         units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
     )
-    monkeypatch.setattr("cre_rentroll.harness.vault.load_session", lambda u: {"messages": []})
     monkeypatch.setattr("cre_rentroll.harness.vault.load_roll", lambda u: real)
-    monkeypatch.setattr("cre_rentroll.harness.vault.save_session", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
     from cre_rentroll.schemas import EvalScores

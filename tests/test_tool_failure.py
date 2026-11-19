@@ -93,8 +93,6 @@ def _stub_in_scope_run(monkeypatch, question: str, draft: str, *, vaulted: bool)
     from cre_rentroll.schemas import CanonicalRentRoll, EvalScores, UnitRow
 
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
-    monkeypatch.setattr("cre_rentroll.harness.vault.save_session", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
@@ -106,10 +104,8 @@ def _stub_in_scope_run(monkeypatch, question: str, draft: str, *, vaulted: bool)
             property_name="Hill",
             units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
         )
-        monkeypatch.setattr("cre_rentroll.harness.vault.load_session", lambda u: {"messages": []})
         monkeypatch.setattr("cre_rentroll.harness.vault.load_roll", lambda u: roll)
     else:
-        monkeypatch.setattr("cre_rentroll.harness.vault.load_session", lambda u: {"messages": []})
         monkeypatch.setattr("cre_rentroll.harness.vault.load_roll", lambda u: None)
 
     def fake_agent(*_a, **_k):

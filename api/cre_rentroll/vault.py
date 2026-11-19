@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
-
 from cre_rentroll import dynamo
 from cre_rentroll.schemas import CanonicalRentRoll
 
 SK = "VAULT#default"
-SESSION_SK = "SESSION#default"
 
 
 def save_roll(username: str, roll: CanonicalRentRoll) -> None:
@@ -24,40 +21,9 @@ def load_roll(username: str) -> CanonicalRentRoll | None:
     return load_mem(turn_ctx.chat_session(), username=username)
 
 
-def load_session(username: str) -> dict[str, Any]:
-    item = dynamo.get_item(username, SESSION_SK) or {}
-    facts = item.get("facts") if isinstance(item.get("facts"), dict) else {}
-    traces = item.get("traces") if isinstance(item.get("traces"), list) else []
-    return {
-        "messages": item.get("messages") or [],
-        "facts": facts,
-        "traces": traces,
-    }
-
-
-def clear_messages(username: str) -> None:
-    """Drop the chat transcript. The rent roll and deal facts stay."""
-    save_session(username, [])
-
-
 def clear_visit(username: str) -> None:
-    """Page load. The previous visit's chat, rent roll, and deal facts are gone."""
-    save_session(username, [], facts={})
+    """Page load. Drop a leftover Dynamo vault row. The chat is not stored there."""
     dynamo.delete_item(username, SK)
-
-
-def save_session(username: str, messages: list[dict[str, Any]], **extra: Any) -> None:
-    """Replace the chat turns. Facts and traces stay unless ``extra`` sets them."""
-    current = dynamo.get_item(username, SESSION_SK) or {}
-    facts = current.get("facts") if isinstance(current.get("facts"), dict) else {}
-    traces = current.get("traces") if isinstance(current.get("traces"), list) else []
-    payload: dict[str, Any] = {
-        "messages": messages[-80:],
-        "facts": facts,
-        "traces": traces,
-    }
-    payload.update(extra)
-    dynamo.put_item(username, SESSION_SK, payload)
 
 
 def vault_spans(roll: CanonicalRentRoll) -> list[str]:

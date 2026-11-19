@@ -44,11 +44,8 @@ def test_no_canned_leftover_reflect_when_reflection_tool_used(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         run_task("tester", "What is occupancy and in-place income?", skip_scope=True)
     finally:
@@ -72,11 +69,8 @@ def test_no_canned_leftover_reflect_when_reflection_tool_skipped(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", lambda *a, **k: "")
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         run_task("tester", "What is occupancy and in-place income?", skip_scope=True)
     finally:

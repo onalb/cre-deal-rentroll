@@ -694,6 +694,19 @@ def _emit_react_turn(
     if stop:
         msg += f" stop={stop}"
     emit("react", msg, llm=True, turn=n, tools=names or None, stop=stop)
+    from cre_rentroll.memory import write_cycle_log
+
+    try:
+        write_cycle_log(
+            turn_ctx.username() or "",
+            turn=n,
+            tools=names,
+            stop=stop or "",
+            line=msg,
+            run_id=turn_ctx.current_run_id(),
+        )
+    except Exception:
+        pass
 
 
 class _ReactTurnLog:

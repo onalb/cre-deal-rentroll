@@ -110,13 +110,12 @@ def login(body: LoginBody) -> dict[str, Any]:
 @app.get("/api/session")
 def session(x_username: str | None = Header(default=None)) -> dict[str, Any]:
     user = _user(x_username)
-    # Page load reads this once. A refresh drops the chat, the rent roll, and deal facts.
+    # Page load. The chat lives in process memory for this visit, not in Dynamo.
     vault.clear_visit(user)
-    sess = vault.load_session(user)
     roll = vault.load_roll(user)
     return {
         "username": user,
-        "messages": sess.get("messages"),
+        "messages": [],
         "facts": retrieve_facts(user),
         "vault": None
         if roll is None

@@ -9,7 +9,7 @@ from cre_rentroll.chips import allow_predict, filter_book_tools
 from cre_rentroll.settings import openai_api_key
 from cre_rentroll.eval_service import cited_locate_map_draft, format_eval_log, gate
 from cre_rentroll.ingest import ack_text, as_of_from_message, ingest_bytes
-from cre_rentroll.memory import facts_prompt, generate_from_roll, write_trace
+from cre_rentroll.memory import facts_prompt, generate_from_roll
 from cre_rentroll.planless import single_tool_intent, this_roll_needs_file
 from cre_rentroll.schemas import CanonicalRentRoll, ChatOutcome, EvalScores
 from cre_rentroll.present import (
@@ -274,6 +274,7 @@ def run_task(
 
     reset_menu()
     traces = turn_ctx.reset_turn(username, keep_run=skip_scope)
+    turn_ctx.set_run_id(run_id)
     turn_ctx.set_ack_prefix(ack_prefix)
     asked = as_of_from_message(shown_user)
     turn_ctx.set_asked_as_of(asked)
@@ -716,21 +717,6 @@ def _persist(
     save_chat(turn_ctx.chat_session(), messages, username=username)
     if not record_trace:
         return
-    # The transcript, rent roll, and deal facts stay on the page session.
-    # This write keeps run traces and clears any leftover Dynamo transcript.
-    vault.save_session(username, [])
-    try:
-        write_trace(
-            username,
-            run_id=run_id,
-            question=user_text,
-            tools_called=outcome.tools_called or [],
-            scores=outcome.eval.model_dump() if outcome.eval else {},
-            stop_reason=outcome.stop_reason or "",
-            preview=(outcome.text or "")[:400],
-        )
-    except Exception:
-        pass
     if agentcore_boxes:
         try:
             from cre_rentroll.agentcore_platform import end_turn

@@ -23,12 +23,9 @@ def _roll() -> CanonicalRentRoll:
 
 def _stub_turn(monkeypatch, draft: str, roll: CanonicalRentRoll | None = None) -> dict:
     reset_predict_state()
-    monkeypatch.setattr("cre_rentroll.harness.vault.load_session", lambda u: {"messages": []})
     monkeypatch.setattr("cre_rentroll.harness.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.harness.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
     monkeypatch.setattr(

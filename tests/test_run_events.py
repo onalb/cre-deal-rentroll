@@ -484,11 +484,8 @@ def test_harness_empty_draft_one_run_agent_not_python_inject(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         run_task("tester", "What is occupancy and in-place income?", skip_scope=True)
     finally:
@@ -537,8 +534,6 @@ def test_harness_judge_failure_is_eval_error(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: roll)
@@ -546,7 +541,6 @@ def test_harness_judge_failure_is_eval_error(monkeypatch):
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(vault_calc_ok=True, judge="error"),
     )
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         outcome = run_task("tester", "What is occupancy?", skip_scope=True)
     finally:
@@ -591,8 +585,6 @@ def test_tool_failure_reason_is_the_bubble(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
@@ -600,7 +592,6 @@ def test_tool_failure_reason_is_the_bubble(monkeypatch):
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(judge="empty", reason="draft missing CRE payload"),
     )
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         outcome = run_task(
             "tester",
@@ -637,11 +628,8 @@ def test_tool_failure_without_a_draft_shows_the_tool_error(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         outcome = run_task("tester", "What occupancy do you predict?", skip_scope=True)
     finally:
@@ -761,8 +749,6 @@ def test_harness_mocked_agent_judge_count_and_tags(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: roll)
@@ -770,7 +756,6 @@ def test_harness_mocked_agent_judge_count_and_tags(monkeypatch):
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(R=5, G=5, request_C=5, vault_calc_ok=True, judge="llm"),
     )
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         run_task("tester", "What is occupancy and in-place income?")
     finally:
@@ -910,11 +895,6 @@ def test_file_plus_question_persists_one_exchange(monkeypatch):
         "I'm currently unable to provide an occupancy prediction due to an "
         "internal error with the forecasting tool."
     )
-    saved: dict = {}
-
-    def fake_save(username, messages, **_k):
-        saved["messages"] = list(messages)
-
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
 
     def fake_agent(*_a, **_k):
@@ -924,8 +904,6 @@ def test_file_plus_question_persists_one_exchange(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", fake_save)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
@@ -935,7 +913,6 @@ def test_file_plus_question_persists_one_exchange(monkeypatch):
             G=5, request_C=5, R=5, vault_calc_ok=True, judge="llm"
         ),
     )
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
 
     outcome = run_task(
         "tester",
@@ -946,7 +923,6 @@ def test_file_plus_question_persists_one_exchange(monkeypatch):
     )
 
     assert outcome.kind == "answer"
-    assert saved["messages"] == []
     from cre_rentroll.chat_memory import load as load_chat
 
     msgs = load_chat("file-q", username="tester")
@@ -966,17 +942,10 @@ def test_ingest_persist_false_leaves_history_alone(monkeypatch):
         property_name="Chambers Hill",
         units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
     )
-    saved: dict = {}
-
     monkeypatch.setattr("cre_rentroll.harness.ingest_bytes", lambda filename, raw: roll)
     monkeypatch.setattr("cre_rentroll.harness.generate_from_roll", lambda u, r: None)
     monkeypatch.setattr("cre_rentroll.vault.save_roll", lambda u, r: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
 
-    def fake_save(username, messages, **_k):
-        saved["messages"] = list(messages)
-
-    monkeypatch.setattr("cre_rentroll.vault.save_session", fake_save)
     token = bind(lambda ev: None)
     try:
         outcome = ingest_attachment("tester", "roll.csv", b"abc", persist=False)
@@ -985,7 +954,6 @@ def test_ingest_persist_false_leaves_history_alone(monkeypatch):
 
     assert outcome.kind == "ingest_ack"
     assert outcome.text.startswith("Saved Chambers Hill")
-    assert "messages" not in saved
 
 
 def test_keep_run_preserves_llm_call_counts():

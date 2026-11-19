@@ -423,11 +423,8 @@ def test_harness_empty_draft_one_run_agent_not_inject_compute_income(monkeypatch
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         run_task("tester", "What is occupancy and in-place income?", skip_scope=True)
     finally:
@@ -470,11 +467,8 @@ def test_harness_inventory_emit_is_not_step_plan(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     try:
         run_task("tester", "What is occupancy and in-place income?", skip_scope=True)
     finally:
@@ -769,11 +763,8 @@ def test_vacant_only_prompt_does_not_require_compute_income(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     run_task("tester", "How many vacant units?", skip_scope=True)
     assert len(prompts) == 1
     joined = " ".join(prompts).lower()
@@ -1204,14 +1195,11 @@ def test_run_task_passes_session_history_into_agent(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     from cre_rentroll.chat_memory import save as save_chat
 
     save_chat("hist-1", history, username="tester")
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     run_task(
         "tester",
         "but this is the same as with 15 vacant",

@@ -3,7 +3,7 @@ import json
 from cre_rentroll.agentcore_app import InvocationBody, parse_payload
 from cre_rentroll.agentcore_client import session_id, should_invoke_remote
 from cre_rentroll.agentcore_platform import begin_turn, enabled, gateway_call
-from cre_rentroll.memory import write_trace
+from cre_rentroll.memory import write_cycle_log
 
 
 def test_parse_payload_nested_and_flat():
@@ -70,31 +70,21 @@ def test_agent_query_units_posts_capabilities_not_agentcore(monkeypatch):
     assert called["deal"][1]["occupancy"] == "Occupied"
 
 
-def test_save_session_keeps_facts_and_traces(monkeypatch):
+def test_each_think_act_cycle_is_one_row(monkeypatch):
     table: dict[tuple[str, str], dict] = {}
-
-    def fake_get(username, sk):
-        return table.get((username, sk))
 
     def fake_put(username, sk, attrs):
         table[(username, sk)] = {"pk": username, "sk": sk, **attrs}
 
-    monkeypatch.setattr("cre_rentroll.dynamo.get_item", fake_get)
+    monkeypatch.setenv("CRE_CYCLE_LOG", "1")
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", fake_put)
-    from cre_rentroll import vault
-
-    vault.save_session("ada", [], facts={"unit_count": 4}, traces=[{"run_id": "t1"}])
-    vault.save_session("ada", [{"role": "user", "content": "occupancy"}])
-    loaded = vault.load_session("ada")
-    assert loaded["messages"][0]["content"] == "occupancy"
-    assert loaded["facts"]["unit_count"] == 4
-    vault.clear_messages("ada")
-    cleared = vault.load_session("ada")
-    assert cleared["messages"] == []
-    assert cleared["facts"]["unit_count"] == 4
-    assert loaded["traces"][0]["run_id"] == "t1"
-    assert "FACT#" not in table
-    assert not any(sk.startswith("TRACE#") for _, sk in table)
+    write_cycle_log("ada", turn=1, tools=["create_plan"], stop="tool_use", line="ReAct turn 1 — create_plan", run_id="ab12")
+    write_cycle_log("ada", turn=2, tools=["query_units"], stop="tool_use", line="ReAct turn 2 — query_units", run_id="ab12")
+    keys = sorted(sk for _, sk in table)
+    assert keys == ["CYCLE#ab12#01", "CYCLE#ab12#02"]
+    assert table[("ada", "CYCLE#ab12#01")]["tools"] == ["create_plan"]
+    assert table[("ada", "CYCLE#ab12#02")]["turn"] == 2
+    assert "SESSION#" not in "".join(keys)
 
 
 def test_vault_lives_on_the_page_session(monkeypatch):
@@ -141,25 +131,6 @@ def test_page_transcript_does_not_cross_users():
     assert load(sid, username="ada")[0]["content"] == "ada's question"
     assert load(sid, username="beau")[0]["content"] == "beau's answer"
     assert load(sid, username="cy") == []
-
-
-def test_write_trace_preview_optional(monkeypatch):
-    session = {"messages": [{"role": "user", "content": "q"}], "facts": {"unit_count": 3}, "traces": []}
-
-    def fake_load(_username):
-        return dict(session)
-
-    def fake_save(_username, messages, **extra):
-        session["messages"] = messages
-        session.update(extra)
-
-    monkeypatch.setattr("cre_rentroll.vault.load_session", fake_load)
-    monkeypatch.setattr("cre_rentroll.vault.save_session", fake_save)
-    write_trace("burak", run_id="abc", question="q", tools_called=["query_units"], scores={}, stop_reason="ok")
-    assert session["traces"][0]["run_id"] == "abc"
-    assert session["traces"][0]["answer_preview"] == ""
-    assert session["facts"]["unit_count"] == 3
-    assert session["messages"][0]["content"] == "q"
 
 
 def test_agentcore_box_prefixes_are_stable():

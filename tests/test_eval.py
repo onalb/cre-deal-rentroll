@@ -242,12 +242,9 @@ def test_failed_eval_does_not_return_comps_draft(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(
@@ -344,11 +341,8 @@ def test_cited_locate_offtopic_eval_shows_map_draft(monkeypatch):
             units=[UnitRow(unit_id="1", in_place_rent=1500, vacant=False)],
         ),
     )
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(
@@ -989,12 +983,9 @@ def test_harness_predictor_clarify_is_not_eval_error(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(
@@ -1038,12 +1029,9 @@ def test_harness_predictor_occupancy_score_is_not_eval_error(monkeypatch):
     monkeypatch.setattr("cre_rentroll.harness.run_agent", fake_agent)
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: None)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.tools._roll", lambda: None)
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(

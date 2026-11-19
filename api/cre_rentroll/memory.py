@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,9 +16,6 @@ SLOT_KEYS = (
     "address_hint",
     "property_name",
 )
-
-
-TRACE_KEEP = 25
 
 
 class MemoryStore:
@@ -98,49 +95,45 @@ def generate_from_roll(username: str, roll: CanonicalRentRoll) -> None:
             pass
 
 
-def write_trace(
+def write_cycle_log(
     username: str,
     *,
-    run_id: str,
-    question: str,
-    tools_called: list[str],
-    scores: dict[str, Any],
-    stop_reason: str,
-    preview: str = "",
+    turn: int,
+    tools: list[str],
+    stop: str = "",
+    line: str = "",
+    run_id: str = "",
 ) -> None:
-    from cre_rentroll import vault
+    """One Dynamo row for one think-act cycle. Not the chat, and not SESSION#default."""
+    user = (username or "").strip()
+    if not user or os.environ.get("CRE_CYCLE_LOG", "1") == "0":
+        return
+    from cre_rentroll import dynamo
 
+    rid = (run_id or "run").strip()[:32]
+    n = int(turn)
     ts = datetime.now(timezone.utc).isoformat()
-    qh = hashlib.sha256(question.encode("utf-8")).hexdigest()[:16]
-    sess = vault.load_session(username)
-    traces = list(sess.get("traces") or [])
-    traces.append(
+    dynamo.put_item(
+        user,
+        f"CYCLE#{rid}#{n:02d}",
         {
             "at": ts,
-            "run_id": run_id,
-            "question_hash": qh,
-            "tools_called": tools_called,
-            "vault_calc_ok": scores.get("vault_calc_ok"),
-            "R": scores.get("R"),
-            "G": scores.get("G"),
-            "request_C": scores.get("request_C"),
-            "retry": scores.get("retry", False),
-            "stop_reason": stop_reason,
-            "answer_preview": (preview or "")[:400],
-        }
-    )
-    vault.save_session(
-        username,
-        list(sess.get("messages") or []),
-        traces=traces[-TRACE_KEEP:],
+            "run_id": rid,
+            "turn": n,
+            "tools": [str(name) for name in tools if name],
+            "stop": (stop or "")[:40],
+            "line": " ".join((line or "").split())[:500],
+        },
     )
 
 
 def list_traces(username: str) -> list[dict[str, Any]]:
-    from cre_rentroll import vault
+    """Think-act cycle rows for this user, one item per cycle."""
+    from cre_rentroll import dynamo
 
-    traces = list(vault.load_session(username).get("traces") or [])
-    return traces[-TRACE_KEEP:]
+    rows = dynamo.query_prefix(username, "CYCLE#")
+    rows.sort(key=lambda row: str(row.get("sk") or ""))
+    return rows
 
 
 class InMemoryStore:

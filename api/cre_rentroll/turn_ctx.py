@@ -22,6 +22,7 @@ _eval_query: ContextVar[str | None] = ContextVar("cre_eval_query", default=None)
 _ack_prefix: ContextVar[str | None] = ContextVar("cre_ack_prefix", default=None)
 _chat_session: ContextVar[str | None] = ContextVar("cre_chat_session", default=None)
 _react_turn: ContextVar[int] = ContextVar("cre_react_turn", default=0)
+_run_id: ContextVar[str] = ContextVar("cre_run_id", default="")
 
 # Strands agent() and the OpenAI fallback both stop after this many model turns.
 REACT_TURN_LIMIT = 12
@@ -45,6 +46,7 @@ def reset_turn(
     _ack_prefix.set(None)
     _react_turn.set(0)
     if not keep_run:
+        _run_id.set("")
         _run_t0.set(time.time())
         _retry_n.set(0)
         _plan_skills.set([])
@@ -142,6 +144,15 @@ def add_llm_if_unchanged(kind: str, before: int) -> None:
     """
     if llm_call_kinds().count(kind) == before:
         add_llm(kind)
+
+
+def set_run_id(value: str) -> None:
+    """Id for this question. Each think-act cycle log for the question carries it."""
+    _run_id.set((value or "").strip())
+
+
+def current_run_id() -> str:
+    return _run_id.get() or ""
 
 
 def note_react_turn(n: int) -> None:

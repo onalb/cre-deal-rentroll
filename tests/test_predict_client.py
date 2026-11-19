@@ -83,8 +83,6 @@ def _stub_book_run(monkeypatch, roll: CanonicalRentRoll) -> None:
     monkeypatch.setattr("cre_rentroll.harness.openai_api_key", lambda: "sk-test")
     monkeypatch.setattr("cre_rentroll.harness.facts_prompt", lambda u: "")
     monkeypatch.setattr("cre_rentroll.vault.load_roll", lambda u: roll)
-    monkeypatch.setattr("cre_rentroll.vault.load_session", lambda u: {"messages": []})
-    monkeypatch.setattr("cre_rentroll.vault.save_session", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.get_item", lambda *a, **k: None)
     monkeypatch.setattr("cre_rentroll.dynamo.put_item", lambda *a, **k: None)
     monkeypatch.setenv("MCP_URL", "https://example.test/mcp")
@@ -96,7 +94,6 @@ def _stub_book_run(monkeypatch, roll: CanonicalRentRoll) -> None:
             {"name": "create_plan", "description": "plan", "input_schema": {"type": "object", "properties": {"checklist": {}}}},
         ],
     )
-    monkeypatch.setattr("cre_rentroll.harness.write_trace", lambda *a, **k: None)
     monkeypatch.setattr(
         "cre_rentroll.eval_service.live_judge",
         lambda *a, **k: EvalScores(R=4, G=4, request_C=4, vault_calc_ok=True, judge="llm"),
